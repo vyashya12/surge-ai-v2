@@ -1,14 +1,26 @@
-import { Button } from "@/components/ui/button";
+"use client";
 
-export default function Home() {
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+
+export default function HomePage() {
+  const router = useRouter();
+
+  useEffect(() => {
+    const token = localStorage.getItem("user");
+    console.log("Root page: authToken:", token);
+    if (token) {
+      console.log("Redirecting to /dashboard/home");
+      router.push("/dashboard/home");
+    } else {
+      console.log("Redirecting to /login");
+      router.push("/login");
+    }
+  }, [router]);
+
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center p-4">
-      <h1 className="text-4xl font-bold mb-4">
-        Welcome to My Next.js + shadcn/ui App
-      </h1>
-      <Button variant="default" size="lg">
-        Click Me
-      </Button>
+    <div className="flex min-h-screen items-center justify-center bg-gray-100">
+      <p>Redirecting...</p>
     </div>
   );
 }
