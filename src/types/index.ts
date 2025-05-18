@@ -39,8 +39,8 @@ export interface Summary {
   id: string;
   session_id: string;
   doctorsid: string;
-  patient: string;
-  doctor: string;
+  patient_summary: string;
+  doctor_summary: string;
   notes_summary: string;
   diagnosis: string;
   diagnosis_probability: number;

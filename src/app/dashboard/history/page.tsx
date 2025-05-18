@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getSessionHistory, getSummaryById } from "@/lib/api";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,13 +13,16 @@ import {
 import { getAuthData } from "@/lib/auth";
 import { Session, Summary } from "@/types";
 
-type SessionWithSummary = Session & { summary?: Summary };
-type PageState = {
+interface SessionWithSummary extends Session {
+  summary?: Summary;
+}
+
+interface PageState {
   sessions: SessionWithSummary[] | null;
   loading: boolean;
   error: string | null;
   openDialogIndex: number | null;
-};
+}
 
 const formatDate = (isoString: string): string => {
   try {
@@ -41,14 +44,14 @@ const formatDate = (isoString: string): string => {
 
 const loadData =
   (
-    setState: (fn: (prev: PageState) => PageState) => void,
+    setState: React.Dispatch<React.SetStateAction<PageState>>,
     baseURL: string,
     token: string | null,
     doctorId: string
   ) =>
   async () => {
     setState((prev) => ({ ...prev, loading: true, error: null }));
-    const sessionResult = await getSessionHistory(baseURL)(doctorId);
+    const sessionResult = await getSessionHistory(token)(doctorId);
     if (!sessionResult.ok) {
       setState((prev) => ({
         ...prev,
@@ -61,11 +64,9 @@ const loadData =
 
     const sessions = sessionResult.value;
     const sessionsWithSummaries: SessionWithSummary[] = await Promise.all(
-      sessions.map(async (session) => {
+      sessions.map(async (session: Session) => {
         if (session.summaryid) {
-          const summaryResult = await getSummaryById(baseURL)(
-            session.summaryid
-          );
+          const summaryResult = await getSummaryById(token)(session.summaryid);
           return {
             ...session,
             summary: summaryResult.ok ? summaryResult.value : undefined,
@@ -82,7 +83,7 @@ const loadData =
     }));
   };
 
-export const HistoryPage = () => {
+export default function HistoryPage() {
   const [state, setState] = useState<PageState>({
     sessions: null,
     loading: true,
@@ -111,12 +112,17 @@ export const HistoryPage = () => {
       }));
       return;
     }
-    loadData(
-      setState,
-      process.env.NEXT_PUBLIC_BACKEND_API_URL!,
-      token,
-      user.id
-    )();
+    const baseURL = process.env.NEXT_PUBLIC_BACKEND_API_URL || "";
+    if (!baseURL) {
+      setState((prev) => ({
+        ...prev,
+        loading: false,
+        error: "Backend API URL not configured",
+        sessions: [],
+      }));
+      return;
+    }
+    loadData(setState, baseURL, token, user.id)();
   }, []);
 
   const toggleDialog = (index: number | null) => {
@@ -167,8 +173,7 @@ export const HistoryPage = () => {
       <Card>
         <CardHeader>
           <CardTitle>
-            🩺 Doctor ID:
-            {authData.ok ? authData.value.user.id : "N/A"}
+            🩺 Doctor ID: {authData.ok ? authData.value.user.id : "N/A"}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -187,53 +192,53 @@ export const HistoryPage = () => {
                 <div className="table-header">Diagnostic Summary</div>
                 <div className="table-header">Created At</div>
               </div>
-              {state.sessions.map((session, index) => (
-                <div key={session.id}>
-                  <div className="grid grid-cols-[1.5fr_2fr_2.5fr_2.5fr_1.5fr] gap-4 items-center py-2">
-                    <div>
-                      <a
-                        href={session.audio_url || "#"}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-500 hover:underline"
-                      >
-                        🔊 Listen
-                      </a>
+              {state.sessions.map(
+                (session: SessionWithSummary, index: number) => (
+                  <div key={session.id}>
+                    <div className="grid grid-cols-[1.5fr_2fr_2.5fr_2.5fr_1.5fr] gap-4 items-center py-2">
+                      <div>
+                        <a
+                          href={session.audio_url || "#"}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-500 hover:underline"
+                        >
+                          🔊 Listen
+                        </a>
+                      </div>
+                      <div>
+                        <Button
+                          className="styled-button"
+                          onClick={() => toggleDialog(index)}
+                        >
+                          Convo
+                        </Button>
+                      </div>
+                      <div>{session.summary?.patient_summary || "-"}</div>
+                      <div>{session.summary?.doctor_summary || "-"}</div>
+                      <div>{formatDate(session.created_at)}</div>
                     </div>
-                    <div>
-                      <Button
-                        className="styled-button"
-                        onClick={() => toggleDialog(index)}
-                      >
-                        Convo
-                      </Button>
-                    </div>
-                    <div>{session.summary?.patient || "-"}</div>
-                    <div>{session.summary?.doctor || "-"}</div>
-                    <div>{formatDate(session.created_at)}</div>
+                    <Dialog
+                      open={state.openDialogIndex === index}
+                      onOpenChange={(open) => toggleDialog(open ? index : null)}
+                    >
+                      <DialogContent className="conversation-modal-dark">
+                        <DialogHeader>
+                          <DialogTitle>🗣️ Conversation Transcript</DialogTitle>
+                        </DialogHeader>
+                        <pre>
+                          {session.conversation || "No transcript available"}
+                        </pre>
+                      </DialogContent>
+                    </Dialog>
+                    <hr className="my-2" />
                   </div>
-                  <Dialog
-                    open={state.openDialogIndex === index}
-                    onOpenChange={(open) => toggleDialog(open ? index : null)}
-                  >
-                    <DialogContent className="conversation-modal-dark">
-                      <DialogHeader>
-                        <DialogTitle>🗣️ Conversation Transcript</DialogTitle>
-                      </DialogHeader>
-                      <pre>
-                        {session.conversation || "No transcript available"}
-                      </pre>
-                    </DialogContent>
-                  </Dialog>
-                  <hr className="my-2" />
-                </div>
-              ))}
+                )
+              )}
             </div>
           )}
         </CardContent>
       </Card>
     </div>
   );
-};
-
-export default HistoryPage;
+}
