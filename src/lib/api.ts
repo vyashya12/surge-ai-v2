@@ -3,10 +3,10 @@ import {
   Session,
   Diagnosis,
   Summary,
-  Suggestion,
-  Keypoint,
+  // Suggestion,
+  // Keypoint,
   DiagnosisSuggestion,
-  LabelConversation,
+  // LabelConversation,
   Result,
 } from "@/types";
 
@@ -165,8 +165,10 @@ export const getSessionHistory =
 
 // Get all diagnosis validations
 export const getAllDiagnosisValidations =
-  (token: string | null) => async (): Promise<Result<Diagnosis[], string>> => {
-    const client = createApiClient(token);
+  (baseUrl: string, token?: string | null) =>
+  async (): Promise<Result<Diagnosis[], string>> => {
+    const client = createApiClient(token!);
+    console.log(baseUrl);
     const response = await client.get<{
       diagnoses: Diagnosis[];
       status: number;

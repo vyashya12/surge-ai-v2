@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { getAllDiagnosisValidations } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getAuthData } from "@/lib/auth";
+import { Diagnosis } from "@/types";
 
-type PageState = { data: any; loading: boolean };
+type PageState = { data: Diagnosis[] | null; loading: boolean };
 
 const loadData =
   (setState: (fn: (prev: PageState) => PageState) => void, baseURL: string) =>

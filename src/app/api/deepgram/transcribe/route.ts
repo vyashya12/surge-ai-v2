@@ -3,7 +3,7 @@ import { createClient, DeepgramClient, DeepgramError } from "@deepgram/sdk";
 
 export async function POST(request: Request) {
   try {
-    const startTime = Date.now();
+    // const startTime = Date.now();
     const apiKey = process.env.NEXT_PUBLIC_DEEPGRAM_API_KEY;
     if (!apiKey) {
       console.error("Deepgram API key not configured");
@@ -55,6 +55,7 @@ export async function POST(request: Request) {
     // Extract transcript and words
     const alternatives = result.results?.channels?.[0]?.alternatives?.[0];
     const transcript = alternatives?.transcript || "";
+    console.log(transcript);
     const words = alternatives?.words || [];
 
     if (!words.length) {

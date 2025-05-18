@@ -50,9 +50,9 @@ interface LabeledSegment {
   speaker: string;
 }
 
-interface Suggestion {
-  suggestion: string;
-}
+// interface Suggestion {
+//   suggestion: string;
+// }
 
 interface Summary {
   patient_summary: string;
@@ -66,9 +66,9 @@ interface Diagnosis {
   similarity: number;
 }
 
-interface Keypoint {
-  keypoint: string;
-}
+// interface Keypoint {
+//   keypoint: string;
+// }
 
 type RecorderState = {
   isRecording: boolean;

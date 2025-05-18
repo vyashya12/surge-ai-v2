@@ -214,9 +214,7 @@ export const HistoryPage = () => {
                   </div>
                   <Dialog
                     open={state.openDialogIndex === index}
-                    onOpenChange={(open: any) =>
-                      toggleDialog(open ? index : null)
-                    }
+                    onOpenChange={(open) => toggleDialog(open ? index : null)}
                   >
                     <DialogContent className="conversation-modal-dark">
                       <DialogHeader>
