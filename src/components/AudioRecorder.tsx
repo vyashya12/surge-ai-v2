@@ -17,6 +17,7 @@ import {
   CategoryScale,
   LinearScale,
   Tooltip,
+  TooltipItem,
 } from "chart.js";
 
 // Register Chart.js components
@@ -44,35 +45,39 @@ const formatText = (text: string): string => {
     : capitalized + ".";
 };
 
-type LabeledSegment = {
+interface LabeledSegment {
   text: string;
   speaker: string;
-};
+}
 
-type Suggestion = string;
+interface Suggestion {
+  suggestion: string;
+}
 
-type Summary = {
+interface Summary {
   patient_summary: string;
   doctor_summary: string;
-};
+}
 
-type Diagnosis = {
+interface Diagnosis {
   diagnoses: { diagnosis: string; likelihood: number }[];
   symptoms: string[];
   source: string;
   similarity: number;
-};
+}
 
-type Keypoint = string;
+interface Keypoint {
+  keypoint: string;
+}
 
 type RecorderState = {
   isRecording: boolean;
   isPaused: boolean;
   labeledSegments: LabeledSegment[];
-  suggestions: Suggestion[];
+  suggestions: string[];
   summary: Summary | null;
   diagnosis: Diagnosis | null;
-  keypoints: Keypoint[];
+  keypoints: string[];
   error: string | null;
   isSending: boolean;
   doctorsNotes: string;
@@ -189,7 +194,7 @@ export default function AudioRecorder() {
       tooltip: {
         enabled: true,
         callbacks: {
-          label: (context: any) => {
+          label: (context: TooltipItem<"bar">) => {
             const label = context.dataset.label || "";
             const value = context.parsed.x;
             return `${label}: ${value}%`;
@@ -225,15 +230,13 @@ export default function AudioRecorder() {
         }
 
         const data = await response.json();
-        const segments = data.data || [];
-        console.log("Transcription response:", segments);
+        const segments: LabeledSegment[] = data.data || [];
 
         if (segments && segments.length > 0) {
           console.log("Sending segments to labelConversation:", segments);
           const labelResult = await labelConversation(token)({
             data: segments,
           });
-          console.log("labelConversation result:", labelResult);
           if (!labelResult.ok) {
             throw new Error(
               labelResult.error ||
@@ -245,7 +248,6 @@ export default function AudioRecorder() {
           if (!Array.isArray(labeledData)) {
             throw new Error("labelConversation returned invalid data");
           }
-          console.log("Labeled data:", labeledData);
 
           const conversationData = {
             data: labeledData.reduce(
@@ -272,15 +274,12 @@ export default function AudioRecorder() {
               []
             ),
           };
-          console.log("Conversation data for other APIs:", conversationData);
 
           const doctorsNotes = state.doctorsNotes;
 
-          console.log("Fetching suggestions with data:", conversationData);
           const suggestionsResult = await getSuggestions(token)(
             conversationData
           );
-          console.log("getSuggestions result:", suggestionsResult);
           if (!suggestionsResult.ok) {
             throw new Error(
               suggestionsResult.error || "Failed to fetch suggestions"
@@ -288,9 +287,7 @@ export default function AudioRecorder() {
           }
           const suggestionsData = suggestionsResult.value?.suggestions || [];
 
-          console.log("Fetching summary with data:", conversationData);
           const summaryResult = await getSummary(token)(conversationData);
-          console.log("getSummary result:", summaryResult);
           if (!summaryResult.ok) {
             throw new Error(summaryResult.error || "Failed to fetch summary");
           }
@@ -301,9 +298,7 @@ export default function AudioRecorder() {
             doctors_notes: doctorsNotes,
             threshold: 0.7,
           };
-          console.log("Fetching diagnosis with request:", diagnosisRequest);
           const diagnosisResult = await getDiagnosis(token)(diagnosisRequest);
-          console.log("getDiagnosis result:", diagnosisResult);
           if (!diagnosisResult.ok) {
             throw new Error(
               diagnosisResult.error ||
@@ -316,9 +311,7 @@ export default function AudioRecorder() {
             conversation_input: conversationData,
             doctors_notes: doctorsNotes,
           };
-          console.log("Fetching keypoints with request:", keypointsRequest);
           const keypointsResult = await getKeypoints(token)(keypointsRequest);
-          console.log("getKeypoints result:", keypointsResult);
           const keypointsData = keypointsResult.ok
             ? keypointsResult.value?.keypoints || []
             : [];
@@ -336,22 +329,27 @@ export default function AudioRecorder() {
         } else {
           throw new Error("No segments received from Deepgram");
         }
-      } catch (error: any) {
-        console.error("sendAudio error:", {
-          message: error.message,
-          stack: error.stack,
-          api: error.message?.includes("labelConversation")
+      } catch (error: unknown) {
+        let errorMessage =
+          "An unexpected error occurred during audio processing.";
+        let api = "unknown";
+
+        if (error instanceof Error) {
+          errorMessage = error.message;
+          api = error.message.includes("labelConversation")
             ? "labelConversation"
-            : error.message?.includes("diagnosis")
+            : error.message.includes("diagnosis")
             ? "getDiagnosis"
-            : "unknown",
-        });
-        const errorMessage = error.message?.includes("labelConversation")
-          ? "Failed to process conversation. Please try again."
-          : error.message?.includes("diagnosis")
-          ? "Failed to fetch diagnosis. Please try again."
-          : error.message ||
-            "An unexpected error occurred during audio processing.";
+            : "unknown";
+          console.error("sendAudio error:", {
+            message: error.message,
+            stack: error.stack,
+            api,
+          });
+        } else {
+          console.error("sendAudio error:", { error, api });
+        }
+
         setState((prev) => ({
           ...prev,
           error: errorMessage,
@@ -359,7 +357,7 @@ export default function AudioRecorder() {
         }));
       }
     },
-    [isHydrated, state.doctorsNotes, token]
+    [isHydrated, state.doctorsNotes, token, state.isPaused, state.isSending]
   );
 
   const startRecording = useCallback(async () => {
@@ -440,11 +438,13 @@ export default function AudioRecorder() {
         error: null,
         isSending: false,
       }));
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to start recording";
       console.error("startRecording error:", error);
       setState((prev) => ({
         ...prev,
-        error: error.message || "Failed to start recording",
+        error: errorMessage,
       }));
     }
   }, [isHydrated, sendAudio]);
@@ -469,11 +469,13 @@ export default function AudioRecorder() {
         sendIntervalRef.current = null;
       }
       setState((prev) => ({ ...prev, isPaused: true, isSending: false }));
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to pause recording";
       console.error("pauseRecording error:", error);
       setState((prev) => ({
         ...prev,
-        error: error.message || "Failed to pause recording",
+        error: errorMessage,
         isSending: false,
       }));
     }
@@ -487,11 +489,13 @@ export default function AudioRecorder() {
     try {
       mediaRecorder.resume();
       setState((prev) => ({ ...prev, isPaused: false }));
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to resume recording";
       console.error("resumeRecording error:", error);
       setState((prev) => ({
         ...prev,
-        error: error.message || "Failed to resume recording",
+        error: errorMessage,
       }));
     }
   }, [isHydrated, mediaRecorder]);
@@ -522,11 +526,13 @@ export default function AudioRecorder() {
         isPaused: false,
         isSending: false,
       }));
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to stop recording";
       console.error("stopRecording error:", error);
       setState((prev) => ({
         ...prev,
-        error: error.message || "Failed to stop recording",
+        error: errorMessage,
         isSending: false,
       }));
     }
@@ -616,10 +622,6 @@ export default function AudioRecorder() {
             </Button>
           )}
         </div>
-
-        {/* {state.error && (
-          <p className="text-red-500 text-center mt-4">{state.error}</p>
-        )} */}
 
         {state.suggestions.length > 0 && (
           <div className="mt-8">

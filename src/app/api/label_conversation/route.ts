@@ -37,7 +37,6 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    console.log("Received body:", JSON.stringify(body, null, 2));
 
     if (!body.data || !Array.isArray(body.data)) {
       console.error("Invalid request body: data is missing or not an array");
@@ -47,7 +46,6 @@ export async function POST(request: Request) {
       );
     }
 
-    console.log("Forwarding to labeling API:", JSON.stringify(body, null, 2));
     const response = await axios.post(
       `${backendUrl}/label-conversation`,
       body,
@@ -58,20 +56,11 @@ export async function POST(request: Request) {
       }
     );
 
-    console.log(
-      "Raw backend response:",
-      JSON.stringify(response.data, null, 2)
-    );
-
     // Merge segments with the same speaker
     const mergedData = {
       data: mergeSegments(response.data.data || []),
     };
 
-    console.log(
-      "Labeling API response (merged):",
-      JSON.stringify(mergedData, null, 2)
-    );
     return NextResponse.json(mergedData, { status: response.status });
   } catch (error) {
     if (axios.isAxiosError(error) && error.response) {

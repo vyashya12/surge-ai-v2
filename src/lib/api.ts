@@ -10,15 +10,21 @@ import {
   Result,
 } from "@/types";
 
+// Custom error interface for safe error handling
+interface AppError {
+  message: string;
+  stack?: string;
+}
+
 // Create a reusable Axios client with token support
 const createApiClient = (token: string | null) => ({
-  post: async <T>(url: string, data: any): Promise<Result<T, string>> => {
+  post: async <T>(url: string, data: unknown): Promise<Result<T, string>> => {
     try {
       const response = await axios.post<T>(`/api${url}`, data, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       return { ok: true, value: response.data };
-    } catch (error) {
+    } catch (error: unknown) {
       if (axios.isAxiosError(error)) {
         const message = error.response?.data?.message || error.message;
         const status = error.response?.status;
@@ -29,7 +35,11 @@ const createApiClient = (token: string | null) => ({
             : `Request failed: ${message}`,
         };
       }
-      return { ok: false, error: "Request failed: Unknown error" };
+      const appError = error as AppError;
+      return {
+        ok: false,
+        error: appError.message || "Request failed: Unknown error",
+      };
     }
   },
   get: async <T>(url: string): Promise<Result<T, string>> => {
@@ -38,7 +48,7 @@ const createApiClient = (token: string | null) => ({
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       return { ok: true, value: response.data };
-    } catch (error) {
+    } catch (error: unknown) {
       if (axios.isAxiosError(error)) {
         const message = error.response?.data?.message || error.message;
         const status = error.response?.status;
@@ -49,7 +59,11 @@ const createApiClient = (token: string | null) => ({
             : `Request failed: ${message}`,
         };
       }
-      return { ok: false, error: "Request failed: Unknown error" };
+      const appError = error as AppError;
+      return {
+        ok: false,
+        error: appError.message || "Request failed: Unknown error",
+      };
     }
   },
 });
@@ -81,7 +95,6 @@ interface LoginResponse {
   message: string;
 }
 
-// Register a doctor
 // Register a doctor
 export const register =
   () =>
@@ -128,10 +141,7 @@ export const login =
     }
     return {
       ok: false,
-      error:
-        response.ok && response.value.message
-          ? response.value.message
-          : response.toString() || "Login failed",
+      error: response.toString() || "Login failed",
     };
   };
 
@@ -180,25 +190,37 @@ export const getSummaryById =
     >(`/summary/${summaryId}`);
     return response.ok && response.value.status === 200
       ? { ok: true, value: response.value }
-      : { ok: false, error: response.toString() || "Failed to fetch summary" };
+      : {
+          ok: false,
+          error: response.toString() || "Failed to fetch summary",
+        };
   };
 
 // Get summary from conversation
 export const getSummaryFromConversation =
   (token: string | null) =>
-  async (data: any): Promise<Result<Summary, string>> => {
+  async (data: SummaryRequest): Promise<Result<Summary, string>> => {
     const client = createApiClient(token);
     const response = await client.post<
       Summary & { status: number; message?: string }
     >("/separate-conversation-summary", data);
     return response.ok && response.value.status === 200
       ? { ok: true, value: response.value }
-      : { ok: false, error: response.toString() || "Failed to fetch summary" };
+      : {
+          ok: false,
+          error: response.toString() || "Failed to fetch summary",
+        };
   };
 
-type SuggestionsRequest = { data: { doctor: string; patient: string }[] };
+// Request and response types for specific APIs
+interface SuggestionsRequest {
+  data: { doctor: string; patient: string }[];
+}
 
-type SuggestionsResponse = { suggestions: string[] };
+interface SuggestionsResponse {
+  suggestions: string[];
+}
+
 // Get doctor reply suggestions
 export const getSuggestions =
   (token: string | null) =>
@@ -217,36 +239,29 @@ export const getSuggestions =
         JSON.stringify(response, null, 2)
       );
 
-      if (!response.ok) {
-        return {
-          ok: false,
-          error: response.toString(),
-        };
-      }
-
-      return {
-        ok: true,
-        value: response.value,
-      };
-    } catch (error: any) {
-      console.error(
-        "getSuggestions fetch error:",
-        JSON.stringify(error, null, 2)
-      );
+      return response;
+    } catch (error: unknown) {
+      const appError = error as AppError;
+      console.error("getSuggestions fetch error:", appError);
       return {
         ok: false,
-        error:
-          error.message ||
-          JSON.stringify(error) ||
-          "Failed to fetch suggestions",
+        error: appError.message || "Failed to fetch suggestions",
       };
     }
   };
 
 // Suggest diagnoses
+interface DiagnosesRequest {
+  conversation_input: { data: { doctor: string; patient: string }[] };
+  doctors_notes: string;
+  threshold: number;
+}
+
 export const suggestDiagnoses =
   (token: string | null) =>
-  async (data: any): Promise<Result<DiagnosisSuggestion[], string>> => {
+  async (
+    data: DiagnosesRequest
+  ): Promise<Result<DiagnosisSuggestion[], string>> => {
     const client = createApiClient(token);
     const response = await client.post<{
       diagnoses: DiagnosisSuggestion[];
@@ -262,16 +277,22 @@ export const suggestDiagnoses =
   };
 
 // Label conversation
-type LabelConversation2 = { data: { text: string; speaker: string }[] };
+interface LabelConversationRequest {
+  data: { text: string; speaker: string }[];
+}
+
+interface LabelConversationResponse {
+  data: { text: string; speaker: string }[];
+}
 
 export const labelConversation =
   (token: string | null) =>
   async (
-    data: LabelConversation2
-  ): Promise<Result<LabelConversation2, string>> => {
+    data: LabelConversationRequest
+  ): Promise<Result<LabelConversationResponse, string>> => {
     try {
       const client = createApiClient(token);
-      const response = await client.post<LabelConversation2>(
+      const response = await client.post<LabelConversationResponse>(
         "/label_conversation",
         data
       );
@@ -281,38 +302,26 @@ export const labelConversation =
         JSON.stringify(response, null, 2)
       );
 
-      if (!response.ok) {
-        return {
-          ok: false,
-          error: response.toString(),
-        };
-      }
-
-      return {
-        ok: true,
-        value: response.value,
-      };
-    } catch (error: any) {
-      console.error(
-        "labelConversation fetch error:",
-        JSON.stringify(error, null, 2)
-      );
+      return response;
+    } catch (error: unknown) {
+      const appError = error as AppError;
+      console.error("labelConversation fetch error:", appError);
       return {
         ok: false,
-        error:
-          error.message ||
-          JSON.stringify(error) ||
-          "Failed to fetch labelConversation",
+        error: appError.message || "Failed to fetch labelConversation",
       };
     }
   };
 
-type SummaryRequest = { data: { doctor: string; patient: string }[] };
+// Get summary
+interface SummaryRequest {
+  data: { doctor: string; patient: string }[];
+}
 
-type SummaryResponse = {
+interface SummaryResponse {
   patient_summary: string;
   doctor_summary: string;
-};
+}
 
 export const getSummary =
   (token: string | null) =>
@@ -329,39 +338,30 @@ export const getSummary =
         JSON.stringify(response, null, 2)
       );
 
-      if (!response.ok) {
-        return {
-          ok: false,
-          error: response.toString(),
-        };
-      }
-
-      return {
-        ok: true,
-        value: response.value,
-      };
-    } catch (error: any) {
-      console.error("getSummary fetch error:", JSON.stringify(error, null, 2));
+      return response;
+    } catch (error: unknown) {
+      const appError = error as AppError;
+      console.error("getSummary fetch error:", appError);
       return {
         ok: false,
-        error:
-          error.message || JSON.stringify(error) || "Failed to fetch summary",
+        error: appError.message || "Failed to fetch summary",
       };
     }
   };
 
-type DiagnosisRequest = {
+// Get diagnosis
+interface DiagnosisRequest {
   conversation_input: { data: { doctor: string; patient: string }[] };
   doctors_notes: string;
   threshold: number;
-};
+}
 
-type DiagnosisResponse = {
+interface DiagnosisResponse {
   diagnoses: { diagnosis: string; likelihood: number }[];
   symptoms: string[];
   source: string;
   similarity: number;
-};
+}
 
 export const getDiagnosis =
   (token: string | null) =>
@@ -380,38 +380,26 @@ export const getDiagnosis =
         JSON.stringify(response, null, 2)
       );
 
-      if (!response.ok) {
-        return {
-          ok: false,
-          error: response.toString(),
-        };
-      }
-
-      return {
-        ok: true,
-        value: response.value,
-      };
-    } catch (error: any) {
-      console.error(
-        "getDiagnosis fetch error:",
-        JSON.stringify(error, null, 2)
-      );
+      return response;
+    } catch (error: unknown) {
+      const appError = error as AppError;
+      console.error("getDiagnosis fetch error:", appError);
       return {
         ok: false,
-        error:
-          error.message || JSON.stringify(error) || "Failed to fetch diagnosis",
+        error: appError.message || "Failed to fetch diagnosis",
       };
     }
   };
 
-type KeypointsRequest = {
+// Get keypoints
+interface KeypointsRequest {
   conversation_input: { data: { doctor: string; patient: string }[] };
   doctors_notes: string;
-};
+}
 
-type KeypointsResponse = {
+interface KeypointsResponse {
   keypoints: string[];
-};
+}
 
 export const getKeypoints =
   (token: string | null) =>
@@ -430,28 +418,13 @@ export const getKeypoints =
         JSON.stringify(response, null, 2)
       );
 
-      if (!response.ok) {
-        return {
-          ok: false,
-          error: response.toString(),
-        };
-      }
-
-      return {
-        ok: true,
-        value: response.value,
-      };
-    } catch (error: any) {
-      console.error(
-        "getKeypoints fetch error:",
-        JSON.stringify(error, null, 2)
-      );
+      return response;
+    } catch (error: unknown) {
+      const appError = error as AppError;
+      console.error("getKeypoints fetch error:", appError);
       return {
         ok: false,
-        error:
-          error.message ||
-          JSON.stringify(error) ||
-          "Failed to fetch keypoints. The endpoint may be unavailable.",
+        error: appError.message || "Failed to fetch keypoints",
       };
     }
   };

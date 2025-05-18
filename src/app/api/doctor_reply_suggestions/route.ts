@@ -13,7 +13,6 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    console.log("Received body:", JSON.stringify(body, null, 2));
 
     if (!body.data || !Array.isArray(body.data)) {
       console.error("Invalid request body: data is missing or not an array");
@@ -23,10 +22,6 @@ export async function POST(request: Request) {
       );
     }
 
-    console.log(
-      "Forwarding to suggestions API:",
-      JSON.stringify(body, null, 2)
-    );
     const response = await axios.post(
       `${backendUrl}/doctor-reply-suggestions`,
       body,
@@ -35,11 +30,6 @@ export async function POST(request: Request) {
           "Content-Type": "application/json",
         },
       }
-    );
-
-    console.log(
-      "Suggestions API response:",
-      JSON.stringify(response.data, null, 2)
     );
 
     return NextResponse.json(response.data, { status: response.status });

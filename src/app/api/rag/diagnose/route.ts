@@ -13,7 +13,6 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    console.log("Received body:", JSON.stringify(body, null, 2));
 
     if (
       !body.conversation_input?.data ||
@@ -31,17 +30,11 @@ export async function POST(request: Request) {
       );
     }
 
-    console.log("Forwarding to diagnosis API:", JSON.stringify(body, null, 2));
     const response = await axios.post(`${backendUrl}/rag/diagnose`, body, {
       headers: {
         "Content-Type": "application/json",
       },
     });
-
-    console.log(
-      "Diagnosis API response:",
-      JSON.stringify(response.data, null, 2)
-    );
 
     return NextResponse.json(response.data, { status: response.status });
   } catch (error) {

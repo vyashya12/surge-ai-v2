@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient, DeepgramClient } from "@deepgram/sdk";
+import { createClient, DeepgramClient, DeepgramError } from "@deepgram/sdk";
 
 export async function POST(request: Request) {
   try {
@@ -28,11 +28,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // Log chunk details
-    console.log(
-      `Received audio chunk, size: ${audioBlob.size} bytes, type: ${audioBlob.type}`
-    );
-
     // Convert Blob to Buffer
     const buffer = Buffer.from(await audioBlob.arrayBuffer());
 
@@ -40,9 +35,10 @@ export async function POST(request: Request) {
     const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
       buffer,
       {
-        model: "nova-2-medical",
+        model: "whisper-large",
         smart_format: true,
         diarize: true,
+        num_speakers: 2, // Explicitly expect two speakers
         language: "en",
         mimetype: audioBlob.type || "audio/ogg",
       }
@@ -50,7 +46,10 @@ export async function POST(request: Request) {
 
     if (error) {
       console.error("Deepgram transcription error:", error);
-      return NextResponse.json({ message: error.message }, { status: 500 });
+      return NextResponse.json(
+        { message: (error as DeepgramError).message || "Transcription failed" },
+        { status: 500 }
+      );
     }
 
     // Extract transcript and words
@@ -58,78 +57,116 @@ export async function POST(request: Request) {
     const transcript = alternatives?.transcript || "";
     const words = alternatives?.words || [];
 
-    // Normalize speaker labels
+    if (!words.length) {
+      console.error("No words returned from Deepgram");
+      return NextResponse.json(
+        { message: "No transcription data returned" },
+        { status: 400 }
+      );
+    }
+
+    // Log speaker assignments for debugging
+    console.log(
+      "Deepgram speaker assignments:",
+      words.map((w) => ({
+        word: w.punctuated_word,
+        speaker: w.speaker,
+        speaker_confidence: w.speaker_confidence,
+      }))
+    );
+
+    // Normalize speaker labels with stricter matching
     const doctorKeywords = [
       "prescribe",
       "diagnose",
       "treatment",
       "examination",
       "referral",
-      "how are you",
-      "where",
-      "does",
-      "what seems",
-      "let me",
-      "check",
       "recommend",
+      "describe",
+      "detail", // Added for context like "in more detail"
     ];
 
-    const normalizeSpeaker = (text: string): string => {
+    const normalizeSpeaker = (
+      text: string,
+      prevSpeaker: string | null
+    ): string => {
       const textLower = text.toLowerCase();
-      return doctorKeywords.some((keyword) => textLower.includes(keyword))
+      const hasDoctorKeyword = doctorKeywords.some((keyword) =>
+        textLower.includes(keyword)
+      );
+      return hasDoctorKeyword
         ? "doctor"
+        : prevSpeaker === "doctor"
+        ? "patient"
         : "patient";
     };
 
-    // Group words into segments by speaker and punctuation
+    // Group words into segments by speaker and sentence boundaries
     const segments: { text: string; speaker: string }[] = [];
     let currentSegment: { text: string; speaker: number | null } = {
       text: "",
       speaker: null,
     };
+    let lastSpeaker: string | null = null;
+    let lastEndTime = 0;
 
-    for (const word of words) {
+    for (let i = 0; i < words.length; i++) {
+      const word = words[i];
       const speaker = word.speaker ?? 0;
       const punctuated = word.punctuated_word || word.word;
+
+      // Detect speaker change based on Deepgram or time gap (>1s)
+      const isSpeakerChange =
+        currentSegment.speaker !== null &&
+        (speaker !== currentSegment.speaker ||
+          (word.start - lastEndTime > 1 && i > 0));
+
+      // End segment on punctuation or speaker change
+      const isSentenceEnd =
+        punctuated.endsWith(".") || punctuated.endsWith("?");
+
       if (currentSegment.speaker === null) {
         currentSegment.speaker = speaker;
         currentSegment.text = punctuated;
-      } else if (
-        currentSegment.speaker === speaker &&
-        !punctuated.endsWith(".") &&
-        !punctuated.endsWith("?")
-      ) {
+      } else if (!isSpeakerChange && !isSentenceEnd) {
         currentSegment.text += ` ${punctuated}`;
       } else {
+        const normalizedSpeaker = normalizeSpeaker(
+          currentSegment.text,
+          lastSpeaker
+        );
         segments.push({
           text: currentSegment.text.trim(),
-          speaker: normalizeSpeaker(currentSegment.text),
+          speaker: normalizedSpeaker,
         });
+        lastSpeaker = normalizedSpeaker;
         currentSegment = { text: punctuated, speaker };
       }
+
+      lastEndTime = word.end;
     }
 
     // Push the last segment
     if (currentSegment.text) {
+      const normalizedSpeaker = normalizeSpeaker(
+        currentSegment.text,
+        lastSpeaker
+      );
       segments.push({
         text: currentSegment.text.trim(),
-        speaker: normalizeSpeaker(currentSegment.text),
+        speaker: normalizedSpeaker,
       });
     }
 
-    // Log the raw Deepgram response and segments
-    // console.log(
-    //   "Raw Deepgram response:",
-    //   JSON.stringify({ transcript, words }, null, 2)
-    // );
-    // console.log("Structured segments:", JSON.stringify(segments, null, 2));
+    // Log final segments for debugging
+    console.log("Final segments:", segments);
 
     return NextResponse.json({ data: segments }, { status: 200 });
-  } catch (error) {
+  } catch (error: unknown) {
+    const errorMessage =
+      error instanceof Error ? error.message : "Internal Server Error";
     console.error("Deepgram transcription error:", error);
-    return NextResponse.json(
-      { message: "Internal Server Error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ message: errorMessage }, { status: 500 });
   }
 }
