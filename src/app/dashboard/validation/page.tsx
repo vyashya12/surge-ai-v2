@@ -21,7 +21,7 @@ const loadData =
     }));
   };
 
-export const ValidationPage = () => {
+export default function ValidationPage() {
   const [state, setState] = useState<PageState>({ data: null, loading: true });
 
   useEffect(() => {
@@ -47,6 +47,4 @@ export const ValidationPage = () => {
       </Card>
     </div>
   );
-};
-
-export default ValidationPage;
+}
