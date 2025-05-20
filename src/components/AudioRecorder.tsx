@@ -4,6 +4,13 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   labelConversation,
   getSuggestions,
   getSummary,
@@ -27,9 +34,9 @@ ChartJS.register(BarElement, CategoryScale, LinearScale, Tooltip);
 const getSupportedMimeType = (): string | undefined => {
   if (typeof window === "undefined") return undefined;
   const mimeTypes = ["audio/ogg", "audio/webm", "audio/mp4"];
-  for (const mimeType of mimeTypes) {
-    if (MediaRecorder.isTypeSupported(mimeType)) {
-      return mimeType;
+  for (const mimetype of mimeTypes) {
+    if (MediaRecorder.isTypeSupported(mimetype)) {
+      return mimetype;
     }
   }
   return undefined;
@@ -50,10 +57,6 @@ interface LabeledSegment {
   speaker: string;
 }
 
-// interface Suggestion {
-//   suggestion: string;
-// }
-
 interface Summary {
   patient_summary: string;
   doctor_summary: string;
@@ -66,10 +69,6 @@ interface Diagnosis {
   similarity: number;
 }
 
-// interface Keypoint {
-//   keypoint: string;
-// }
-
 type RecorderState = {
   isRecording: boolean;
   isPaused: boolean;
@@ -81,6 +80,9 @@ type RecorderState = {
   error: string | null;
   isSending: boolean;
   doctorsNotes: string;
+  physicalEvaluation: string;
+  gender: string;
+  age: string;
 };
 
 export default function AudioRecorder() {
@@ -95,6 +97,9 @@ export default function AudioRecorder() {
     error: null,
     isSending: false,
     doctorsNotes: "",
+    physicalEvaluation: "",
+    gender: "",
+    age: "",
   });
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(
     null
@@ -131,11 +136,28 @@ export default function AudioRecorder() {
     }
   }, [state.error]);
 
-  // Handle doctor’s notes input
+  // Handle doctor's notes input
   const handleDoctorsNotesChange = (
     e: React.ChangeEvent<HTMLTextAreaElement>
   ) => {
     setState((prev) => ({ ...prev, doctorsNotes: e.target.value }));
+  };
+
+  // Handle physical evaluation input
+  const handlePhysicalEvaluationChange = (
+    e: React.ChangeEvent<HTMLTextAreaElement>
+  ) => {
+    setState((prev) => ({ ...prev, physicalEvaluation: e.target.value }));
+  };
+
+  // Handle gender selection
+  const handleGenderChange = (value: string) => {
+    setState((prev) => ({ ...prev, gender: value }));
+  };
+
+  // Handle age selection
+  const handleAgeChange = (value: string) => {
+    setState((prev) => ({ ...prev, age: value }));
   };
 
   // Chart.js data for diagnosis bar
@@ -208,156 +230,196 @@ export default function AudioRecorder() {
   };
 
   const sendAudio = useCallback(
-    async (audioBlob: Blob) => {
+    async (audioBlob: Blob, retries = 3) => {
       if (!isHydrated) return;
-      setState((prev) => ({ ...prev, isSending: true }));
-      try {
-        const formData = new FormData();
-        formData.append("audio", audioBlob, "chunk.webm");
-
-        console.log("Sending audio to /api/deepgram/transcribe");
-        const response = await fetch("/api/deepgram/transcribe", {
-          method: "POST",
-          body: formData,
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(
-            errorData.message || `Transcription failed: HTTP ${response.status}`
-          );
-        }
-
-        const data = await response.json();
-        const segments: LabeledSegment[] = data.data || [];
-
-        if (segments && segments.length > 0) {
-          console.log("Sending segments to labelConversation:", segments);
-          const labelResult = await labelConversation(token)({
-            data: segments,
-          });
-          if (!labelResult.ok) {
-            throw new Error(
-              labelResult.error ||
-                "Failed to label conversation. Please try again."
-            );
-          }
-
-          const labeledData = labelResult.value?.data || [];
-          if (!Array.isArray(labeledData)) {
-            throw new Error("labelConversation returned invalid data");
-          }
-
-          const conversationData = {
-            data: labeledData.reduce(
-              (acc: { doctor: string; patient: string }[], segment, index) => {
-                if (index % 2 === 0) {
-                  const nextSegment = labeledData[index + 1];
-                  acc.push({
-                    doctor:
-                      segment.speaker === "doctor"
-                        ? segment.text
-                        : nextSegment?.speaker === "doctor"
-                        ? nextSegment.text
-                        : "",
-                    patient:
-                      segment.speaker === "patient"
-                        ? segment.text
-                        : nextSegment?.speaker === "patient"
-                        ? nextSegment.text
-                        : "",
-                  });
-                }
-                return acc;
-              },
-              []
-            ),
-          };
-
-          const doctorsNotes = state.doctorsNotes;
-
-          const suggestionsResult = await getSuggestions(token)(
-            conversationData
-          );
-          if (!suggestionsResult.ok) {
-            throw new Error(
-              suggestionsResult.error || "Failed to fetch suggestions"
-            );
-          }
-          const suggestionsData = suggestionsResult.value?.suggestions || [];
-
-          const summaryResult = await getSummary(token)(conversationData);
-          if (!summaryResult.ok) {
-            throw new Error(summaryResult.error || "Failed to fetch summary");
-          }
-          const summaryData = summaryResult.value || null;
-
-          const diagnosisRequest = {
-            conversation_input: conversationData,
-            doctors_notes: doctorsNotes,
-            threshold: 0.7,
-          };
-          const diagnosisResult = await getDiagnosis(token)(diagnosisRequest);
-          if (!diagnosisResult.ok) {
-            throw new Error(
-              diagnosisResult.error ||
-                "Failed to fetch diagnosis. Please try again."
-            );
-          }
-          const diagnosisData = diagnosisResult.value || null;
-
-          const keypointsRequest = {
-            conversation_input: conversationData,
-            doctors_notes: doctorsNotes,
-          };
-          const keypointsResult = await getKeypoints(token)(keypointsRequest);
-          const keypointsData = keypointsResult.ok
-            ? keypointsResult.value?.keypoints || []
-            : [];
-
-          setState((prev) => ({
-            ...prev,
-            labeledSegments: labeledData,
-            suggestions: suggestionsData,
-            summary: summaryData,
-            diagnosis: diagnosisData,
-            keypoints: keypointsData,
-            error: null,
-            isSending: false,
-          }));
-        } else {
-          throw new Error("No segments received from Deepgram");
-        }
-      } catch (error: unknown) {
-        let errorMessage =
-          "An unexpected error occurred during audio processing.";
-        let api = "unknown";
-
-        if (error instanceof Error) {
-          errorMessage = error.message;
-          api = error.message.includes("labelConversation")
-            ? "labelConversation"
-            : error.message.includes("diagnosis")
-            ? "getDiagnosis"
-            : "unknown";
-          console.error("sendAudio error:", {
-            message: error.message,
-            stack: error.stack,
-            api,
-          });
-        } else {
-          console.error("sendAudio error:", { error, api });
-        }
-
+      if (!audioBlob || audioBlob.size === 0) {
+        console.warn("Invalid audio blob:", audioBlob);
         setState((prev) => ({
           ...prev,
-          error: errorMessage,
+          error: "Invalid audio input",
           isSending: false,
         }));
+        return;
+      }
+
+      for (let attempt = 1; attempt <= retries; attempt++) {
+        setState((prev) => ({ ...prev, isSending: true }));
+        try {
+          const formData = new FormData();
+          formData.append("audio", audioBlob, "chunk.webm");
+
+          const response = await fetch("/api/deepgram/transcribe", {
+            method: "POST",
+            body: formData,
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(
+              errorData.message ||
+                `Transcription failed: HTTP ${response.status}`
+            );
+          }
+
+          const data = await response.json();
+          const segments: LabeledSegment[] = data.data || [];
+
+          if (segments && segments.length > 0) {
+            const labelResult = await labelConversation(token)({
+              data: segments,
+            });
+            if (!labelResult.ok) {
+              throw new Error(
+                labelResult.error ||
+                  "Failed to label conversation. Please try again."
+              );
+            }
+
+            const labeledData = labelResult.value?.data || [];
+            const formattedConversation = labeledData.map((segment, index) => ({
+              text: segment.text.trim(),
+              speaker: segment.speaker,
+            }));
+
+            const conversationData = {
+              data: labeledData.reduce(
+                (
+                  acc: { doctor: string; patient: string }[],
+                  segment,
+                  index
+                ) => {
+                  if (index % 2 === 0) {
+                    const nextSegment = labeledData[index + 1];
+                    acc.push({
+                      doctor:
+                        segment.speaker === "doctor"
+                          ? segment.text
+                          : nextSegment?.speaker === "doctor"
+                          ? nextSegment.text
+                          : "",
+                      patient:
+                        segment.speaker === "patient"
+                          ? segment.text
+                          : nextSegment?.speaker === "patient"
+                          ? nextSegment.text
+                          : "",
+                    });
+                  }
+                  return acc;
+                },
+                []
+              ),
+            };
+
+            const doctorsNotes = state.doctorsNotes;
+
+            const suggestionsResult = await getSuggestions(token)(
+              conversationData
+            );
+            if (!suggestionsResult.ok) {
+              throw new Error(
+                suggestionsResult.error || "Failed to fetch suggestions"
+              );
+            }
+            const suggestionsData = suggestionsResult.value?.suggestions || [];
+
+            const summaryConversation = {
+              data: formattedConversation.map((segment) => ({
+                [segment.speaker]: segment.text,
+              })),
+            };
+
+            const summaryResult = await getSummary(token)(summaryConversation);
+            if (!summaryResult.ok) {
+              throw new Error(summaryResult.error || "Failed to fetch summary");
+            }
+            const summaryData = summaryResult.value || null;
+
+            const diagnosisRequest = {
+              conversation_input: conversationData,
+              doctors_notes: doctorsNotes,
+              threshold: 0.7,
+            };
+            const diagnosisResult = await getDiagnosis(token)(diagnosisRequest);
+            if (!diagnosisResult.ok) {
+              throw new Error(
+                diagnosisResult.error ||
+                  "Failed to fetch diagnosis. Please try again."
+              );
+            }
+            const diagnosisData = diagnosisResult.value || null;
+
+            const keypointsRequest = {
+              conversation_input: conversationData,
+              doctors_notes: doctorsNotes,
+            };
+            const keypointsResult = await getKeypoints(token)(keypointsRequest);
+            const keypointsData = keypointsResult.ok
+              ? keypointsResult.value?.keypoints || []
+              : [];
+
+            setState((prev) => ({
+              ...prev,
+              labeledSegments: formattedConversation,
+              suggestions: suggestionsData,
+              summary: summaryData,
+              diagnosis: diagnosisData,
+              keypoints: keypointsData,
+              error: null,
+              isSending: false,
+            }));
+          } else {
+            throw new Error("No segments received from Deepgram");
+          }
+          return; // Success, exit retry loop
+        } catch (error: unknown) {
+          let errorMessage =
+            "An unexpected error occurred during audio processing.";
+          let api = "unknown";
+
+          if (error instanceof Error) {
+            errorMessage = error.message;
+            api = error.message.includes("labelConversation")
+              ? "labelConversation"
+              : error.message.includes("diagnosis")
+              ? "getDiagnosis"
+              : "unknown";
+            console.error(`sendAudio attempt ${attempt} failed:`, {
+              message: errorMessage,
+              stack: error.stack || "No stack trace",
+              api,
+              input: audioBlob.size,
+              timestamp: new Date().toISOString(),
+              attempt,
+            });
+          } else {
+            console.error(`sendAudio attempt ${attempt} failed:`, {
+              error,
+              api,
+              input: audioBlob.size,
+              timestamp: new Date().toISOString(),
+              attempt,
+            });
+          }
+
+          if (attempt === retries) {
+            setState((prev) => ({
+              ...prev,
+              error: errorMessage,
+              isSending: false,
+            }));
+            return {
+              success: false,
+              message: "Diagnosis unavailable after retries",
+            };
+          }
+          // Exponential backoff
+          await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+        }
       }
     },
-    [isHydrated, state.doctorsNotes, token, state.isPaused, state.isSending]
+    [isHydrated, state.doctorsNotes, token]
   );
 
   const startRecording = useCallback(async () => {
@@ -413,7 +475,7 @@ export default function AudioRecorder() {
             });
             sendAudio(audioBlob);
           }
-        }, 10000);
+        }, 15000);
       };
 
       newMediaRecorder.onstop = () => {
@@ -548,8 +610,20 @@ export default function AudioRecorder() {
       keypoints: [],
       error: null,
       doctorsNotes: "",
+      physicalEvaluation: "",
+      gender: "",
+      age: "",
     }));
   }, []);
+
+  // Placeholder handlers for Accept and Reject buttons
+  const handleAccept = () => {
+    // Add API call here later
+  };
+
+  const handleReject = () => {
+    // Add API call here later
+  };
 
   const handleToggleRecording = useCallback(async () => {
     if (!isHydrated) return;
@@ -572,147 +646,248 @@ export default function AudioRecorder() {
   ]);
 
   if (!isHydrated) {
-    return <div>Loading...</div>;
+    return (
+      <div className="flex items-center justify-center h-screen text-gray-700">
+        Loading...
+      </div>
+    );
   }
 
   return (
-    <div className="flex-1 p-8 relative">
-      <h1 className="text-3xl font-bold mb-8 text-center">Surge AI</h1>
-      <div className="max-w-2xl mx-auto">
-        <h3 className="font-bold mb-2">Notes</h3>
-        <Textarea
-          value={state.doctorsNotes}
-          onChange={handleDoctorsNotesChange}
-          placeholder="Enter doctor’s notes and physical evaluation results here..."
-          rows={6}
-          className="w-full p-4 border rounded-md"
-        />
-        <div className="flex justify-center space-x-4 mt-6">
-          <Button
-            onClick={handleToggleRecording}
-            className={
-              state.isRecording
+    <div className="flex min-h-screen bg-gray-100">
+      <div className="flex-1 p-4 sm:p-8">
+        <div className="max-w-4xl mx-auto mt-8 sm:mt-16">
+          {state.error && (
+            <div className="mb-4 p-4 bg-red-100 text-red-700 rounded-md">
+              {state.error}
+            </div>
+          )}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+            <Textarea
+              value={state.doctorsNotes}
+              onChange={handleDoctorsNotesChange}
+              placeholder="Enter doctor's notes here..."
+              rows={6}
+              className="w-full p-4 border rounded-md"
+            />
+            <Textarea
+              value={state.physicalEvaluation}
+              onChange={handlePhysicalEvaluationChange}
+              placeholder="Enter physical evaluation (e.g., blood pressure, heart rate)..."
+              rows={6}
+              className="w-full p-4 border rounded-md"
+            />
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+            <Select onValueChange={handleGenderChange} value={state.gender}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select Gender" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="male">Male</SelectItem>
+                <SelectItem value="female">Female</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select onValueChange={handleAgeChange} value={state.age}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select Age Range" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="0-17">0-17</SelectItem>
+                <SelectItem value="18-30">18-30</SelectItem>
+                <SelectItem value="31-50">31-50</SelectItem>
+                <SelectItem value="51-70">51-70</SelectItem>
+                <SelectItem value="71+">71+</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-wrap justify-center gap-4 mt-6">
+            <Button
+              onClick={handleToggleRecording}
+              className={
+                state.isRecording
+                  ? state.isPaused
+                    ? "bg-yellow-400 hover:bg-yellow-500"
+                    : "bg-yellow-400 hover:bg-yellow-500"
+                  : "bg-green-500 hover:bg-green-600"
+              }
+            >
+              {state.isRecording
                 ? state.isPaused
-                  ? "bg-yellow-400 hover:bg-yellow-500"
-                  : "bg-yellow-400 hover:bg-yellow-500"
-                : "bg-green-500 hover:bg-green-600"
-            }
-          >
-            {state.isRecording
-              ? state.isPaused
-                ? "Resume Recording"
-                : "Pause Recording"
-              : "Start Recording"}
-          </Button>
-          {state.isRecording && (
-            <Button
-              onClick={stopRecording}
-              className="bg-red-500 hover:bg-red-600"
-            >
-              Stop Recording
+                  ? "Resume Recording"
+                  : "Pause Recording"
+                : "Start Recording"}
             </Button>
+            {state.isRecording && (
+              <Button
+                onClick={stopRecording}
+                className="bg-red-500 hover:bg-red-600"
+              >
+                Stop Recording
+              </Button>
+            )}
+            {!state.isRecording && (
+              <Button
+                onClick={clearResults}
+                className="bg-red-500 hover:bg-red-600"
+                disabled={state.isSending || state.labeledSegments.length === 0}
+              >
+                Clear Results
+              </Button>
+            )}
+          </div>
+
+          {state.suggestions.length > 0 && (
+            <div className="mt-8">
+              <h3 className="font-bold mb-2 text-lg sm:text-xl">
+                Doctor Reply Suggestions
+              </h3>
+              <div className="bg-white p-4 rounded-md shadow-sm">
+                <ul className="list-disc pl-5">
+                  {state.suggestions.map((suggestion, index) => (
+                    <li key={index} className="mb-2">
+                      {formatText(suggestion)}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
           )}
-          {!state.isRecording && (
-            <Button
-              onClick={clearResults}
-              className="bg-red-500 hover:bg-red-600"
-              disabled={state.isSending || state.labeledSegments.length === 0}
-            >
-              Clear Results
-            </Button>
-          )}
-        </div>
 
-        {state.suggestions.length > 0 && (
-          <div className="mt-8">
-            <h3 className="font-bold mb-2">Doctor Reply Suggestions</h3>
-            <div className="bg-white p-4 rounded-md shadow-sm">
-              <ul className="list-disc pl-5">
-                {state.suggestions.map((suggestion, index) => (
-                  <li key={index} className="mb-2">
-                    {formatText(suggestion)}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        )}
-
-        {state.diagnosis && (
-          <div className="mt-8">
-            <h3 className="font-bold mb-2">Diagnosis</h3>
-            <div className="bg-white p-4 rounded-md shadow-sm">
-              <p className="mb-2">
-                <strong>Diagnoses:</strong>
-              </p>
-              <ul className="list-disc pl-5 mb-2">
-                {state.diagnosis.diagnoses.map((diag, index) => (
-                  <li key={index}>
-                    {formatText(diag.diagnosis)} (Likelihood: {diag.likelihood}
-                    %)
-                  </li>
-                ))}
-              </ul>
-              {getChartData() && (
-                <div style={{ height: "120px" }}>
-                  <Bar data={getChartData()!} options={chartOptions} />
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {state.summary && (
-          <div className="mt-8">
-            <h3 className="font-bold mb-2">Conversation Summary</h3>
-            <div className="bg-white p-4 rounded-md shadow-sm">
-              <p className="mb-2">
-                <strong>Patient Summary:</strong>{" "}
-                {formatText(state.summary.patient_summary)}
-              </p>
-              <p className="mb-2">
-                <strong>Doctor Summary:</strong>{" "}
-                {formatText(state.summary.doctor_summary)}
-              </p>
-            </div>
-          </div>
-        )}
-
-        {state.labeledSegments.length > 0 && (
-          <div className="mt-8">
-            <h3 className="font-bold mb-2">Labeled Conversation</h3>
-            <div className="bg-white p-4 rounded-md shadow-sm">
-              {state.isSending && (
-                <p className="text-gray-500">Processing audio chunk...</p>
-              )}
-              {state.labeledSegments.map((segment, index) => (
-                <p key={index} className="mb-2">
-                  <strong>
-                    {segment.speaker.charAt(0).toUpperCase() +
-                      segment.speaker.slice(1)}
-                    :
-                  </strong>{" "}
-                  {formatText(segment.text)}
+          {state.diagnosis && (
+            <div className="mt-8">
+              <h3 className="font-bold mb-2 text-lg sm:text-xl">Diagnosis</h3>
+              <div className="bg-white p-4 rounded-md shadow-sm">
+                <p className="mb-2">
+                  <strong>Diagnoses:</strong>
                 </p>
-              ))}
+                <ul className="list-disc pl-5 mb-2">
+                  {state.diagnosis.diagnoses.map((diag, index) => (
+                    <li key={index}>
+                      {formatText(diag.diagnosis)} (Likelihood:{" "}
+                      {diag.likelihood}
+                      %)
+                    </li>
+                  ))}
+                </ul>
+                {getChartData() && (
+                  <div className="h-32 sm:h-40">
+                    <Bar data={getChartData()!} options={chartOptions} />
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+
+          {state.summary && (
+            <div className="mt-8">
+              <h3 className="font-bold mb-2 text-lg sm:text-xl">
+                Conversation Summary
+              </h3>
+              <div className="bg-white p-4 rounded-md shadow-sm">
+                <p className="mb-2">
+                  <strong>Patient Summary:</strong>{" "}
+                  {formatText(state.summary.patient_summary)}
+                </p>
+                <p className="mb-2">
+                  <strong>Doctor Summary:</strong>{" "}
+                  {formatText(state.summary.doctor_summary)}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {(state.keypoints.length > 0 || state.diagnosis || state.summary) && (
+            <div className="mt-8 mb-4">
+              <h3 className="font-bold mb-2 text-lg sm:text-xl">
+                Summary and Actions
+              </h3>
+              <div className="bg-white p-4 rounded-md shadow-sm">
+                {state.keypoints.length > 0 && (
+                  <>
+                    <p className="mb-2">
+                      <strong>Key Points:</strong>
+                    </p>
+                    <ul className="list-disc pl-5 mb-4">
+                      {state.keypoints.map((keypoint, index) => (
+                        <li key={index} className="mb-2">
+                          {formatText(keypoint)}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+                {state.diagnosis && (
+                  <>
+                    <p className="mb-2">
+                      <strong>Diagnosis:</strong>
+                    </p>
+                    <ul className="list-disc pl-5 mb-4">
+                      {state.diagnosis.diagnoses.map((diag, index) => (
+                        <li key={index}>
+                          {formatText(diag.diagnosis)} (Likelihood:{" "}
+                          {diag.likelihood}
+                          %)
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+                {state.summary && (
+                  <p className="mb-4">
+                    <strong>Patient Summary:</strong>{" "}
+                    {formatText(state.summary.patient_summary)}
+                  </p>
+                )}
+                <div className="flex justify-end space-x-4">
+                  <Button
+                    onClick={handleAccept}
+                    className="bg-green-500 hover:bg-green-600"
+                  >
+                    Accept
+                  </Button>
+                  <Button
+                    onClick={handleReject}
+                    className="bg-red-500 hover:bg-red-600"
+                  >
+                    Reject
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {state.labeledSegments.map((segment, index) => (
+            <p key={index} className="mb-2">
+              <strong>
+                {segment.speaker.charAt(0).toUpperCase() +
+                  segment.speaker.slice(1)}
+                :
+              </strong>{" "}
+              {segment.text}
+            </p>
+          ))}
+        </div>
       </div>
 
-      {/* Keypoints Sidebar */}
-      <div className="w-64 bg-white shadow-md fixed right-0 top-0 h-full p-4">
-        <h3 className="font-bold mb-2">Key Points</h3>
+      {/* Keypoints Sidebar - Hidden on mobile */}
+      <div className="hidden lg:block w-64 bg-white shadow-lg fixed right-0 top-0 h-full p-4">
+        <h3 className="text-2xl font-bold mb-4 px-2 text-gray-900">
+          Key Points
+        </h3>
         {state.keypoints.length > 0 ? (
-          <ul className="list-disc pl-5">
+          <ul className="list-disc pl-6 space-y-2">
             {state.keypoints.map((keypoint, index) => (
-              <li key={index} className="mb-2">
+              <li
+                key={index}
+                className="px-2 py-2 text-base font-medium text-gray-700 hover:bg-gray-600 hover:text-white rounded-md transition-colors duration-200"
+              >
                 {formatText(keypoint)}
               </li>
             ))}
           </ul>
         ) : (
-          <p className="text-gray-500">No key points available.</p>
+          <p className="text-gray-500 px-2">No key points available.</p>
         )}
       </div>
     </div>

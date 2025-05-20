@@ -2,11 +2,9 @@ import { NextResponse } from "next/server";
 import axios from "axios";
 
 export async function POST(request: Request) {
-  console.log("HIT");
   try {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL;
     if (!backendUrl) {
-      console.log("NO URL");
       return NextResponse.json(
         { message: "Backend URL not configured" },
         { status: 500 }
@@ -19,7 +17,6 @@ export async function POST(request: Request) {
         "Content-Type": "application/json",
       },
     });
-    console.log(response);
 
     return NextResponse.json(response.data, { status: response.status });
   } catch (error) {

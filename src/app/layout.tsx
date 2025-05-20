@@ -4,8 +4,8 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata = {
-  title: "Audio Recorder App",
-  description: "Record and analyze medical conversations",
+  title: "SurgeAI",
+  description: "Record and diagnose your doctor and patient interactions",
 };
 
 export default function RootLayout({

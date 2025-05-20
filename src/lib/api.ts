@@ -168,7 +168,6 @@ export const getAllDiagnosisValidations =
   (baseUrl: string, token?: string | null) =>
   async (): Promise<Result<Diagnosis[], string>> => {
     const client = createApiClient(token!);
-    console.log(baseUrl);
     const response = await client.get<{
       diagnoses: Diagnosis[];
       status: number;
@@ -236,11 +235,6 @@ export const getSuggestions =
         data
       );
 
-      console.log(
-        "getSuggestions fetch response:",
-        JSON.stringify(response, null, 2)
-      );
-
       return response;
     } catch (error: unknown) {
       const appError = error as AppError;
@@ -299,11 +293,6 @@ export const labelConversation =
         data
       );
 
-      console.log(
-        "labelConversation fetch response:",
-        JSON.stringify(response, null, 2)
-      );
-
       return response;
     } catch (error: unknown) {
       const appError = error as AppError;
@@ -317,7 +306,7 @@ export const labelConversation =
 
 // Get summary
 interface SummaryRequest {
-  data: { doctor: string; patient: string }[];
+  data: Array<{ doctor?: string; patient?: string }>;
 }
 
 interface SummaryResponse {
@@ -333,11 +322,6 @@ export const getSummary =
       const response = await client.post<SummaryResponse>(
         "/separate_conversation_summary",
         data
-      );
-
-      console.log(
-        "getSummary fetch response:",
-        JSON.stringify(response, null, 2)
       );
 
       return response;
@@ -377,11 +361,6 @@ export const getDiagnosis =
         data
       );
 
-      console.log(
-        "getDiagnosis fetch response:",
-        JSON.stringify(response, null, 2)
-      );
-
       return response;
     } catch (error: unknown) {
       const appError = error as AppError;
@@ -415,11 +394,6 @@ export const getKeypoints =
         data
       );
 
-      console.log(
-        "getKeypoints fetch response:",
-        JSON.stringify(response, null, 2)
-      );
-
       return response;
     } catch (error: unknown) {
       const appError = error as AppError;
@@ -427,6 +401,60 @@ export const getKeypoints =
       return {
         ok: false,
         error: appError.message || "Failed to fetch keypoints",
+      };
+    }
+  };
+
+interface CombinedCreateRequest {
+  session_id: string;
+  doctor_id: string;
+  patient_summary: string;
+  doctor_summary: string;
+  notes_summary: string;
+  diagnosis: Array<{ diagnosis: string; likelihood: number }>;
+  data_json: {
+    data: Array<unknown>;
+    patient_summary: string;
+    doctor_summary: string;
+    doctor_note_summary: string;
+    diagnoses: Array<{ diagnosis: string; likelihood: number }>;
+    symptoms: string[];
+  };
+  audio_url: string;
+  conversation: string;
+}
+
+interface CombinedCreateResponse {
+  status: number;
+  message: string;
+  [key: string]: any;
+}
+
+// Create combined record
+export const createCombinedRecord =
+  (token: string | null) =>
+  async (
+    data: CombinedCreateRequest
+  ): Promise<Result<CombinedCreateResponse, string>> => {
+    try {
+      const client = createApiClient(token);
+      const response = await client.post<CombinedCreateResponse>(
+        "/combined-create-v2",
+        data
+      );
+
+      console.log(
+        "createCombinedRecord fetch response:",
+        JSON.stringify(response, null, 2)
+      );
+
+      return response;
+    } catch (error: unknown) {
+      const appError = error as AppError;
+      console.error("createCombinedRecord fetch error:", appError);
+      return {
+        ok: false,
+        error: appError.message || "Failed to create combined record",
       };
     }
   };

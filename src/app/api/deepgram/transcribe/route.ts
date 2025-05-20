@@ -3,7 +3,6 @@ import { createClient, DeepgramClient, DeepgramError } from "@deepgram/sdk";
 
 export async function POST(request: Request) {
   try {
-    // const startTime = Date.now();
     const apiKey = process.env.NEXT_PUBLIC_DEEPGRAM_API_KEY;
     if (!apiKey) {
       console.error("Deepgram API key not configured");
@@ -13,10 +12,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Initialize Deepgram client
     const deepgram: DeepgramClient = createClient(apiKey);
-
-    // Get the audio file from the request
     const formData = await request.formData();
     const audioBlob = formData.get("audio") as Blob;
 
@@ -28,17 +24,14 @@ export async function POST(request: Request) {
       );
     }
 
-    // Convert Blob to Buffer
     const buffer = Buffer.from(await audioBlob.arrayBuffer());
-
-    // Send to Deepgram for transcription
     const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
       buffer,
       {
         model: "whisper-large",
         smart_format: true,
         diarize: true,
-        num_speakers: 2, // Explicitly expect two speakers
+        num_speakers: 2,
         language: "en",
         mimetype: audioBlob.type || "audio/ogg",
       }
@@ -52,10 +45,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Extract transcript and words
     const alternatives = result.results?.channels?.[0]?.alternatives?.[0];
-    const transcript = alternatives?.transcript || "";
-    console.log(transcript);
     const words = alternatives?.words || [];
 
     if (!words.length) {
@@ -66,17 +56,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Log speaker assignments for debugging
-    console.log(
-      "Deepgram speaker assignments:",
-      words.map((w) => ({
-        word: w.punctuated_word,
-        speaker: w.speaker,
-        speaker_confidence: w.speaker_confidence,
-      }))
-    );
-
-    // Normalize speaker labels with stricter matching
+    // Improved speaker normalization
     const doctorKeywords = [
       "prescribe",
       "diagnose",
@@ -85,7 +65,7 @@ export async function POST(request: Request) {
       "referral",
       "recommend",
       "describe",
-      "detail", // Added for context like "in more detail"
+      "detail",
     ];
 
     const normalizeSpeaker = (
@@ -103,36 +83,35 @@ export async function POST(request: Request) {
         : "patient";
     };
 
-    // Group words into segments by speaker and sentence boundaries
+    // Improved segmentation logic
     const segments: { text: string; speaker: string }[] = [];
     let currentSegment: { text: string; speaker: number | null } = {
       text: "",
       speaker: null,
     };
     let lastSpeaker: string | null = null;
-    let lastEndTime = 0;
 
     for (let i = 0; i < words.length; i++) {
       const word = words[i];
       const speaker = word.speaker ?? 0;
       const punctuated = word.punctuated_word || word.word;
 
-      // Detect speaker change based on Deepgram or time gap (>1s)
-      const isSpeakerChange =
-        currentSegment.speaker !== null &&
-        (speaker !== currentSegment.speaker ||
-          (word.start - lastEndTime > 1 && i > 0));
-
-      // End segment on punctuation or speaker change
-      const isSentenceEnd =
-        punctuated.endsWith(".") || punctuated.endsWith("?");
-
+      // Initialize segment if empty
       if (currentSegment.speaker === null) {
         currentSegment.speaker = speaker;
         currentSegment.text = punctuated;
-      } else if (!isSpeakerChange && !isSentenceEnd) {
+        continue;
+      }
+
+      // Check for speaker change or sentence end
+      const isSpeakerChange = speaker !== currentSegment.speaker;
+      const isSentenceEnd = punctuated.match(/[.!?]/) !== null;
+
+      // If same speaker and not sentence end, continue building segment
+      if (!isSpeakerChange && !isSentenceEnd) {
         currentSegment.text += ` ${punctuated}`;
       } else {
+        // Finalize current segment
         const normalizedSpeaker = normalizeSpeaker(
           currentSegment.text,
           lastSpeaker
@@ -142,13 +121,16 @@ export async function POST(request: Request) {
           speaker: normalizedSpeaker,
         });
         lastSpeaker = normalizedSpeaker;
-        currentSegment = { text: punctuated, speaker };
-      }
 
-      lastEndTime = word.end;
+        // Start new segment
+        currentSegment = {
+          text: punctuated,
+          speaker: isSpeakerChange ? speaker : currentSegment.speaker,
+        };
+      }
     }
 
-    // Push the last segment
+    // Push the last segment if it exists
     if (currentSegment.text) {
       const normalizedSpeaker = normalizeSpeaker(
         currentSegment.text,
@@ -160,10 +142,31 @@ export async function POST(request: Request) {
       });
     }
 
-    // Log final segments for debugging
-    console.log("Final segments:", segments);
+    // Post-process to merge incomplete sentences
+    const mergedSegments: { text: string; speaker: string }[] = [];
+    for (let i = 0; i < segments.length; i++) {
+      const current = segments[i];
+      const next = segments[i + 1];
 
-    return NextResponse.json({ data: segments }, { status: 200 });
+      // Check if current segment ends with a question mark or period
+      const isComplete =
+        current.text.endsWith(".") ||
+        current.text.endsWith("?") ||
+        current.text.endsWith("!");
+
+      if (!isComplete && next && current.speaker === next.speaker) {
+        // Merge with next segment
+        mergedSegments.push({
+          text: `${current.text} ${next.text}`,
+          speaker: current.speaker,
+        });
+        i++; // Skip next segment since we merged it
+      } else {
+        mergedSegments.push(current);
+      }
+    }
+
+    return NextResponse.json({ data: mergedSegments }, { status: 200 });
   } catch (error: unknown) {
     const errorMessage =
       error instanceof Error ? error.message : "Internal Server Error";
