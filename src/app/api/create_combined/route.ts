@@ -23,7 +23,7 @@ interface CombinedCreateRequest {
 interface CombinedCreateResponse {
   status: number;
   message: string;
-  [key: string]: any; // Allow additional fields from backend
+  [key: string]: unknown; // Replaced 'any' with 'unknown' for additional fields
 }
 
 export async function POST(request: Request) {

@@ -277,7 +277,7 @@ export default function AudioRecorder() {
             }
 
             const labeledData = labelResult.value?.data || [];
-            const formattedConversation = labeledData.map((segment, index) => ({
+            const formattedConversation = labeledData.map((segment) => ({
               text: segment.text.trim(),
               speaker: segment.speaker,
             }));
@@ -419,7 +419,7 @@ export default function AudioRecorder() {
         }
       }
     },
-    [isHydrated, state.doctorsNotes, token]
+    [isHydrated, state.doctorsNotes, state.isPaused, state.isSending, token]
   );
 
   const startRecording = useCallback(async () => {

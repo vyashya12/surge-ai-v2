@@ -3,10 +3,7 @@ import {
   Session,
   Diagnosis,
   Summary,
-  // Suggestion,
-  // Keypoint,
   DiagnosisSuggestion,
-  // LabelConversation,
   Result,
 } from "@/types";
 
@@ -427,7 +424,7 @@ interface CombinedCreateRequest {
 interface CombinedCreateResponse {
   status: number;
   message: string;
-  [key: string]: any;
+  [key: string]: unknown; // Replaced 'any' with 'unknown' for additional fields
 }
 
 // Create combined record
