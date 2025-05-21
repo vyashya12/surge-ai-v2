@@ -340,6 +340,9 @@ export default function AudioRecorder() {
               conversation_input: conversationData,
               doctors_notes: doctorsNotes,
               threshold: 0.7,
+              physical_evaluation: state.physicalEvaluation,
+              gender: state.gender,
+              age: state.age,
             };
             const diagnosisResult = await getDiagnosis(token)(diagnosisRequest);
             if (!diagnosisResult.ok) {
