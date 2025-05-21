@@ -230,8 +230,8 @@ export default function AudioRecorder() {
   };
 
   const sendAudio = useCallback(
-    async (audioBlob: Blob, retries = 3) => {
-      if (!isHydrated) return;
+    async (audioBlob: Blob, isFinal: boolean = false, retries = 3) => {
+      if (!isHydrated) return { success: false, message: "Not hydrated" };
       if (!audioBlob || audioBlob.size === 0) {
         console.warn("Invalid audio blob:", audioBlob);
         setState((prev) => ({
@@ -239,14 +239,14 @@ export default function AudioRecorder() {
           error: "Invalid audio input",
           isSending: false,
         }));
-        return;
+        return { success: false, message: "Invalid audio input" };
       }
 
       for (let attempt = 1; attempt <= retries; attempt++) {
         setState((prev) => ({ ...prev, isSending: true }));
         try {
           const formData = new FormData();
-          formData.append("audio", audioBlob, "chunk.webm");
+          formData.append("audio", audioBlob, `chunk-${Date.now()}.webm`);
 
           const response = await fetch("/api/deepgram/transcribe", {
             method: "POST",
@@ -359,20 +359,33 @@ export default function AudioRecorder() {
               ? keypointsResult.value?.keypoints || []
               : [];
 
+            // Update state incrementally to show results immediately
             setState((prev) => ({
               ...prev,
-              labeledSegments: formattedConversation,
-              suggestions: suggestionsData,
-              summary: summaryData,
-              diagnosis: diagnosisData,
-              keypoints: keypointsData,
+              labeledSegments: isFinal
+                ? formattedConversation
+                : [...prev.labeledSegments, ...formattedConversation],
+              suggestions: isFinal
+                ? suggestionsData
+                : [...new Set([...prev.suggestions, ...suggestionsData])],
+              summary: summaryData || prev.summary,
+              diagnosis: diagnosisData || prev.diagnosis,
+              keypoints: isFinal
+                ? keypointsData
+                : [...new Set([...prev.keypoints, ...keypointsData])],
               error: null,
               isSending: false,
             }));
+
+            // Clear chunks after successful send to prevent memory buildup
+            if (!isFinal) {
+              allAudioChunksRef.current = [];
+            }
+
+            return { success: true };
           } else {
             throw new Error("No segments received from Deepgram");
           }
-          return; // Success, exit retry loop
         } catch (error: unknown) {
           let errorMessage =
             "An unexpected error occurred during audio processing.";
@@ -409,17 +422,15 @@ export default function AudioRecorder() {
               error: errorMessage,
               isSending: false,
             }));
-            return {
-              success: false,
-              message: "Diagnosis unavailable after retries",
-            };
+            return { success: false, message: errorMessage };
           }
           // Exponential backoff
           await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
         }
       }
+      return { success: false, message: "All retries failed" };
     },
-    [isHydrated, state.doctorsNotes, state.isPaused, state.isSending, token]
+    [isHydrated, state.doctorsNotes, token]
   );
 
   const startRecording = useCallback(async () => {
@@ -439,6 +450,10 @@ export default function AudioRecorder() {
       };
 
       newMediaRecorder.onstart = () => {
+        // Clear any existing interval
+        if (sendIntervalRef.current) {
+          clearInterval(sendIntervalRef.current);
+        }
         sendIntervalRef.current = setInterval(() => {
           if (
             newMediaRecorder.state === "recording" &&
@@ -463,6 +478,9 @@ export default function AudioRecorder() {
 
       newMediaRecorder.onresume = () => {
         isFinalSendRef.current = false;
+        if (sendIntervalRef.current) {
+          clearInterval(sendIntervalRef.current);
+        }
         sendIntervalRef.current = setInterval(() => {
           if (
             newMediaRecorder.state === "recording" &&
@@ -475,7 +493,7 @@ export default function AudioRecorder() {
             });
             sendAudio(audioBlob);
           }
-        }, 15000);
+        }, 10000); // Consistent 10-second interval
       };
 
       newMediaRecorder.onstop = () => {
@@ -522,7 +540,7 @@ export default function AudioRecorder() {
         const audioBlob = new Blob(allAudioChunksRef.current, {
           type: mediaRecorder.mimeType,
         });
-        await sendAudio(audioBlob);
+        await sendAudio(audioBlob, true);
       }
 
       mediaRecorder.pause();
@@ -573,7 +591,7 @@ export default function AudioRecorder() {
         const audioBlob = new Blob(allAudioChunksRef.current, {
           type: mediaRecorder.mimeType,
         });
-        await sendAudio(audioBlob);
+        await sendAudio(audioBlob, true);
       }
 
       mediaRecorder.stop();
