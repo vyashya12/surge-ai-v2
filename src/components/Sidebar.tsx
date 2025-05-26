@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -18,9 +18,9 @@ import { useAuth } from "@/hooks/useAuth";
 type NavItem = { name: string; href: string };
 
 const navItems: NavItem[] = [
-  { name: "Home", href: "/home" },
-  { name: "Validation", href: "/validation" },
-  { name: "History", href: "/history" },
+  { name: "Home", href: "/dashboard/home" },
+  { name: "Validation", href: "/dashboard/validation" },
+  { name: "History", href: "/dashboard/history" },
 ];
 
 const renderNavItem = (
@@ -146,10 +146,14 @@ const renderMobileSidebar = (pathname: string, logout: () => void) => (
 export const Sidebar = () => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
   const { logout } = useAuth();
 
   const toggleCollapse = () => setIsCollapsed((prev) => !prev);
-  const handleLogout = () => logout();
+  const handleLogout = () => {
+    logout(); // Call the logout function from useAuth
+    router.push("/"); // Navigate to the root path
+  };
 
   return (
     <>

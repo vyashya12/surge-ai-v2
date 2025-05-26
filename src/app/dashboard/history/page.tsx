@@ -103,6 +103,7 @@ export default function HistoryPage() {
       return;
     }
     const { token, user } = authData.value;
+    console.log(token);
     if (!user.id) {
       setState((prev) => ({
         ...prev,
@@ -168,6 +169,10 @@ export default function HistoryPage() {
           margin-bottom: 15px;
           color: #374151;
         }
+        .audio-player {
+          width: 100%;
+          max-width: 200px;
+        }
       `}</style>
       <h1 className="text-3xl font-bold">📜 Session History</h1>
       <Card>
@@ -186,7 +191,7 @@ export default function HistoryPage() {
           ) : (
             <div>
               <div className="grid grid-cols-[1.5fr_2fr_2.5fr_2.5fr_1.5fr] gap-4 mb-4">
-                <div className="table-header">Audio Link</div>
+                <div className="table-header">Audio</div>
                 <div className="table-header">Conversation</div>
                 <div className="table-header">Patient Summary</div>
                 <div className="table-header">Diagnostic Summary</div>
@@ -197,14 +202,17 @@ export default function HistoryPage() {
                   <div key={session.id}>
                     <div className="grid grid-cols-[1.5fr_2fr_2.5fr_2.5fr_1.5fr] gap-4 items-center py-2">
                       <div>
-                        <a
-                          href={session.audio_url || "#"}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-500 hover:underline"
-                        >
-                          🔊 Listen
-                        </a>
+                        {session.audio_url ? (
+                          <audio
+                            controls
+                            className="audio-player"
+                            src={session.audio_url}
+                          >
+                            Your browser does not support the audio element.
+                          </audio>
+                        ) : (
+                          <span>-</span>
+                        )}
                       </div>
                       <div>
                         <Button

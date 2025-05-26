@@ -33,11 +33,11 @@ export default function DashboardLayout({
       <Sidebar />
       {/* Main Content */}
       <main
-        style={{
-          backgroundImage: "url('/bgimage.jpg')",
-          width: "100%",
-          height: "100%",
-        }}
+        // style={{
+        //   backgroundImage: "url('/bgimage.jpg')",
+        //   width: "100%",
+        //   height: "100%",
+        // }}
         className="flex-1 lg:ml-64 lg:mr-64 p-4 sm:p-8"
       >
         {children}
