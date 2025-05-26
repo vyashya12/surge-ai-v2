@@ -863,13 +863,13 @@ export default function AudioRecorder() {
                 <div className="flex justify-end space-x-4">
                   <Button
                     onClick={handleAccept}
-                    className="bg-green-500 hover:bg-green-600"
+                    className="bg-[#34E796] hover:bg-[#00c36b]"
                   >
-                    Accept
+                    Validated
                   </Button>
                   <Button
                     onClick={handleReject}
-                    className="bg-red-500 hover:bg-red-600"
+                    className="bg-[#f27252] hover:bg-[#ea5321]"
                   >
                     Reject
                   </Button>
@@ -893,9 +893,7 @@ export default function AudioRecorder() {
 
       {/* Keypoints Sidebar - Hidden on mobile */}
       <Card className="hidden lg:block w-4/12 bg-white my-8 mx-6 overflow-y-auto pl-4">
-        <h3 className="text-lg font-semibold mb-4">
-          Key Points
-        </h3>
+        <h3 className="text-lg font-semibold mb-4">Key Points</h3>
         {state.keypoints.length > 0 ? (
           <ul className="list-disc pl-6 ">
             {state.keypoints.map((keypoint, index) => (
