@@ -56,10 +56,11 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-100">
+    <div className="flex min-h-screen items-center justify-center bg-gray-100 flex-col gap-2">
+      <p className='text-lg'>Log in to Surge AI</p>
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>Login to Surge AI</CardTitle>
+          <CardTitle>Welcome back!</CardTitle>
         </CardHeader>
         <CardContent>
           <Form {...form}>

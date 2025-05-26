@@ -26,6 +26,7 @@ import {
   Tooltip,
   TooltipItem,
 } from "chart.js";
+import { Card, CardTitle } from "./ui/card";
 
 // Register Chart.js components
 ChartJS.register(BarElement, CategoryScale, LinearScale, Tooltip);
@@ -675,33 +676,34 @@ export default function AudioRecorder() {
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-100">
-      <div className="flex-1 p-4 sm:p-8">
-        <div className="max-w-4xl mx-auto mt-8 sm:mt-16">
+    <div className="flex min-h-screen bg-gray-50">
+      <div className="p-4 sm:p-8 w-8/12">
+        <p className="font-bold text-xl">Home</p>
+        <div className="max-w-4xl mx-auto sm:mt-8">
           {state.error && (
             <div className="mb-4 p-4 bg-red-100 text-red-700 rounded-md">
               {state.error}
             </div>
           )}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+          <div className="grid grid-cols-1 gap-4">
             <Textarea
+              rows={6}
               value={state.doctorsNotes}
               onChange={handleDoctorsNotesChange}
               placeholder="Enter doctor's notes here..."
-              rows={6}
-              className="w-full p-4 border rounded-md"
+              className="w-full p-4 border rounded-md bg-white"
             />
             <Textarea
+              rows={6}
               value={state.physicalEvaluation}
               onChange={handlePhysicalEvaluationChange}
               placeholder="Enter physical evaluation (e.g., blood pressure, heart rate)..."
-              rows={6}
-              className="w-full p-4 border rounded-md"
+              className="w-full p-4 border rounded-md bg-white"
             />
           </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
             <Select onValueChange={handleGenderChange} value={state.gender}>
-              <SelectTrigger className="w-full">
+              <SelectTrigger className="w-full bg-white">
                 <SelectValue placeholder="Select Gender" />
               </SelectTrigger>
               <SelectContent>
@@ -710,7 +712,7 @@ export default function AudioRecorder() {
               </SelectContent>
             </Select>
             <Select onValueChange={handleAgeChange} value={state.age}>
-              <SelectTrigger className="w-full">
+              <SelectTrigger className="w-full bg-white">
                 <SelectValue placeholder="Select Age Range" />
               </SelectTrigger>
               <SelectContent>
@@ -722,15 +724,13 @@ export default function AudioRecorder() {
               </SelectContent>
             </Select>
           </div>
-          <div className="flex flex-wrap justify-center gap-4 mt-6">
+          <div className="flex w-full justify-center gap-4 mt-4">
             <Button
               onClick={handleToggleRecording}
               className={
                 state.isRecording
-                  ? state.isPaused
-                    ? "bg-yellow-400 hover:bg-yellow-500"
-                    : "bg-yellow-400 hover:bg-yellow-500"
-                  : "bg-green-500 hover:bg-green-600"
+                  ? "bg-[#58B4F2] hover:bg-[#309be1] w-[49%]"
+                  : "bg-[#34E796] hover:bg-[#00c36b] w-[49%]"
               }
             >
               {state.isRecording
@@ -742,7 +742,7 @@ export default function AudioRecorder() {
             {state.isRecording && (
               <Button
                 onClick={stopRecording}
-                className="bg-red-500 hover:bg-red-600"
+                className="bg-[#f27252] hover:bg-[#ea5321] w-[49%]"
               >
                 Stop Recording
               </Button>
@@ -750,7 +750,7 @@ export default function AudioRecorder() {
             {!state.isRecording && (
               <Button
                 onClick={clearResults}
-                className="bg-red-500 hover:bg-red-600"
+                className="bg-[#f27252] hover:bg-[#ea5321] w-[49%]"
                 disabled={state.isSending || state.labeledSegments.length === 0}
               >
                 Clear Results
@@ -892,25 +892,25 @@ export default function AudioRecorder() {
       </div>
 
       {/* Keypoints Sidebar - Hidden on mobile */}
-      <div className="hidden lg:block w-64 bg-white shadow-lg fixed right-0 top-0 h-full p-4">
-        <h3 className="text-2xl font-bold mb-4 px-2 text-gray-900">
+      <Card className="hidden lg:block w-4/12 bg-white my-8 mx-6 overflow-y-auto pl-4">
+        <h3 className="text-lg font-semibold mb-4">
           Key Points
         </h3>
         {state.keypoints.length > 0 ? (
-          <ul className="list-disc pl-6 space-y-2">
+          <ul className="list-disc pl-6 ">
             {state.keypoints.map((keypoint, index) => (
               <li
                 key={index}
-                className="px-2 py-2 text-base font-medium text-gray-700 hover:bg-gray-600 hover:text-white rounded-md transition-colors duration-200"
+                className="py-2 text-base font-medium text-gray-700 hover:bg-gray-600 hover:text-white rounded-md transition-colors duration-200"
               >
                 {formatText(keypoint)}
               </li>
             ))}
           </ul>
         ) : (
-          <p className="text-gray-500 px-2">No key points available.</p>
+          <p className="text-gray-500">No key points available.</p>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

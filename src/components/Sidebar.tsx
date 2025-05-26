@@ -9,40 +9,65 @@ import {
   SheetContent,
   SheetTrigger,
   SheetHeader,
-  SheetTitle,
 } from "@/components/ui/sheet";
-import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
-import { Menu, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  Menu,
+  ChevronLeft,
+  ChevronRight,
+  History,
+  Home,
+  CheckCircle,
+  LogOut,
+} from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 
-type NavItem = { name: string; href: string };
+type NavItem = { name: string; href: string; icon: React.ReactNode };
 
 const navItems: NavItem[] = [
-  { name: "Home", href: "/home" },
-  { name: "Validation", href: "/validation" },
-  { name: "History", href: "/history" },
+  { name: "Home", href: "/home", icon: <Home /> },
+  { name: "Validation", href: "/validation", icon: <CheckCircle /> },
+  { name: "History", href: "/history", icon: <History /> },
 ];
 
-const renderNavItem = (
-  item: NavItem,
-  pathname: string,
-  isCollapsed: boolean
-) => (
-  <Link
-    key={item.href}
-    href={item.href}
-    className={`flex items-center px-2 py-2 mx-2 rounded-md text-base font-medium transition-colors duration-200 ${
-      pathname === item.href
-        ? "bg-gray-600 text-white"
-        : "text-gray-700 hover:bg-gray-600 hover:text-white"
-    } ${isCollapsed ? "justify-center" : ""}`}
+const NavLinks = ({
+  pathname,
+  isCollapsed = false,
+}: {
+  pathname: string;
+  isCollapsed?: boolean;
+}) => (
+  <>
+    {navItems.map((item) => (
+      <Link
+        key={item.href}
+        href={item.href}
+        className={`flex items-center px-2 py-2 mx-2 rounded-md text-base font-medium transition-colors duration-200 ${
+          pathname === item.href
+            ? "bg-gray-600 text-white"
+            : "text-gray-700 hover:bg-gray-600 hover:text-white"
+        } ${isCollapsed ? "justify-center" : "gap-4"}`}
+      >
+        <span className="text-lg">{item.icon}</span>
+        {!isCollapsed && <span>{item.name}</span>}
+      </Link>
+    ))}
+  </>
+);
+
+const LogoutButton = ({
+  isCollapsed,
+  onClick,
+}: {
+  isCollapsed?: boolean;
+  onClick: () => void;
+}) => (
+  <Button
+    variant="outline"
+    className="w-full text-white bg-[#f27252] hover:bg-[#ea5321] hover:text-white"
+    onClick={onClick}
   >
-    {isCollapsed ? (
-      <span className="text-lg font-medium">{item.name[0]}</span>
-    ) : (
-      <span className="text-base font-medium">{item.name}</span>
-    )}
-  </Link>
+    {isCollapsed ? <LogOut /> : "Logout"}
+  </Button>
 );
 
 const renderDesktopSidebar = (
@@ -53,18 +78,18 @@ const renderDesktopSidebar = (
 ) => (
   <div
     className={`${
-      isCollapsed ? "w-16" : "w-64"
+      isCollapsed ? "w-16" : "min-w-[20%]"
     } hidden lg:flex flex-col h-screen bg-white text-gray-700 shadow-lg transition-all duration-300 border-r border-gray-200 fixed top-0 left-0 z-10`}
   >
     <div className="flex items-center justify-between p-4 border-b border-gray-200">
       {!isCollapsed && (
-        <h1 className="text-2xl font-bold text-gray-900">Surge AI</h1>
+        <h1 className="text-xl font-bold text-gray-900">Surge AI</h1>
       )}
       <Button
-        variant="ghost"
+        variant="outline"
         size="icon"
         onClick={toggleCollapse}
-        className="text-gray-700 hover:bg-gray-600 hover:text-white"
+        className="text-gray-700 hover:bg-gray-600 hover:text-white rounded-full"
       >
         {isCollapsed ? (
           <ChevronRight className="h-5 w-5" />
@@ -74,18 +99,10 @@ const renderDesktopSidebar = (
       </Button>
     </div>
     <nav className="flex-1 mt-6 space-y-2">
-      {navItems.map((item) => renderNavItem(item, pathname, isCollapsed))}
+      <NavLinks pathname={pathname} isCollapsed={isCollapsed} />
     </nav>
     <div className="mt-auto p-2">
-      <Button
-        variant="outline"
-        className={`w-full text-gray-700 border-gray-300 hover:bg-gray-600 hover:text-white ${
-          isCollapsed ? "text-sm" : ""
-        }`}
-        onClick={logout}
-      >
-        {isCollapsed ? "L" : "Logout"}
-      </Button>
+      <LogoutButton isCollapsed={isCollapsed} onClick={logout} />
     </div>
   </div>
 );
@@ -107,44 +124,28 @@ const renderMobileSidebar = (pathname: string, logout: () => void) => (
         className="w-64 bg-white text-gray-700 border-r border-gray-200 p-0"
       >
         <SheetHeader>
-          <VisuallyHidden>
-            <SheetTitle>Navigation Menu</SheetTitle>
-          </VisuallyHidden>
           <h1 className="text-2xl font-bold p-4 border-b border-gray-200 text-gray-900">
             Surge AI
           </h1>
         </SheetHeader>
         <nav className="mt-6 space-y-2">
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`block px-4 py-2 mx-2 rounded-md text-base font-medium transition-colors duration-200 ${
-                pathname === item.href
-                  ? "bg-gray-600 text-white"
-                  : "text-gray-700 hover:bg-gray-600 hover:text-white"
-              }`}
-            >
-              {item.name}
-            </Link>
-          ))}
+          <NavLinks pathname={pathname} />
         </nav>
         <div className="absolute bottom-4 left-0 w-full px-4">
-          <Button
-            variant="outline"
-            className="w-full text-gray-700 border-gray-300 hover:bg-gray-600 hover:text-white"
-            onClick={logout}
-          >
-            Logout
-          </Button>
+          <LogoutButton onClick={logout} />
         </div>
       </SheetContent>
     </Sheet>
   </div>
 );
 
-export const Sidebar = () => {
-  const [isCollapsed, setIsCollapsed] = useState(false);
+export const Sidebar = ({
+  isCollapsed,
+  setIsCollapsed,
+}: {
+  isCollapsed: boolean;
+  setIsCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
+}) => {
   const pathname = usePathname();
   const { logout } = useAuth();
 
@@ -163,5 +164,3 @@ export const Sidebar = () => {
     </>
   );
 };
-
-export default Sidebar;
