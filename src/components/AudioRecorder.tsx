@@ -892,7 +892,7 @@ export default function AudioRecorder() {
       </div>
 
       {/* Keypoints Sidebar - Hidden on mobile */}
-      <Card className="hidden lg:block w-4/12 bg-white my-8 mx-6 overflow-y-auto pl-4">
+      <Card className="hidden lg:block w-4/12 bg-white my-8 mr-8 overflow-y-auto pl-4">
         <h3 className="text-lg font-semibold mb-4">Key Points</h3>
         {state.keypoints.length > 0 ? (
           <ul className="list-disc pl-6 ">
