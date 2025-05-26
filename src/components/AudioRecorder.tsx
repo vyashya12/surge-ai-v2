@@ -1051,7 +1051,7 @@ export default function AudioRecorder() {
             </div>
           </div>
         )}
-        {state.summary && (
+        {/* {state.summary && (
           <div className="mb-6">
             <h3 className="font-bold mb-2 text-lg sm:text-xl">
               Conversation Summary
@@ -1067,7 +1067,7 @@ export default function AudioRecorder() {
               </p>
             </div>
           </div>
-        )}
+        )} */}
         {(state.keypoints.length > 0 || state.diagnosis || state.summary) && (
           <div className="mb-6">
             <h3 className="font-bold mb-2 text-lg sm:text-xl">
