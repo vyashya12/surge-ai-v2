@@ -132,7 +132,7 @@ export default function HistoryPage() {
   const authData = getAuthData();
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-8">
       <style jsx>{`
         .conversation-modal-dark {
           padding: 20px;
@@ -169,7 +169,7 @@ export default function HistoryPage() {
           color: #374151;
         }
       `}</style>
-      <h1 className="text-3xl font-bold">📜 Session History</h1>
+      <h1 className="text-xl font-bold">Session History</h1>
       <Card>
         <CardHeader>
           <CardTitle>

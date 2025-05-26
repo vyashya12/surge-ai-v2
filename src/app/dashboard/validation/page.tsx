@@ -29,8 +29,8 @@ export default function ValidationPage() {
   }, []);
 
   return (
-    <div>
-      <h1 className="text-3xl font-bold mb-6">Validation</h1>
+    <div className='p-8'>
+      <h1 className="text-xl font-bold mb-6">Validation</h1>
       <Card>
         <CardHeader>
           <CardTitle>Diagnosis Validations</CardTitle>

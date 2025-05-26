@@ -24,9 +24,9 @@ import { useAuth } from "@/hooks/useAuth";
 type NavItem = { name: string; href: string; icon: React.ReactNode };
 
 const navItems: NavItem[] = [
-  { name: "Home", href: "/home", icon: <Home /> },
-  { name: "Validation", href: "/validation", icon: <CheckCircle /> },
-  { name: "History", href: "/history", icon: <History /> },
+  { name: "Home", href: "/dashboard/home", icon: <Home /> },
+  { name: "Validation", href: "/dashboard/validation", icon: <CheckCircle /> },
+  { name: "History", href: "/dashboard/history", icon: <History /> },
 ];
 
 const NavLinks = ({

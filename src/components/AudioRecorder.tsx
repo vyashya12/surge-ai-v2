@@ -676,7 +676,7 @@ export default function AudioRecorder() {
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-white">
       <div className="p-4 sm:p-8 w-8/12">
         <p className="font-bold text-xl">Home</p>
         <div className="max-w-4xl mx-auto sm:mt-8">
