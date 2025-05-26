@@ -9,21 +9,33 @@ interface CombinedCreateRequest {
   notes_summary: string;
   diagnosis: Array<{ diagnosis: string; likelihood: number }>;
   data_json: {
-    data: Array<unknown>;
+    data: Array<{ [key: string]: string }>;
     patient_summary: string;
     doctor_summary: string;
     doctor_note_summary: string;
     diagnoses: Array<{ diagnosis: string; likelihood: number }>;
     symptoms: string[];
+    physical_evaluation: string;
+    gender: string;
+    age: string;
   };
   audio_url: string;
   conversation: string;
+  physical_evaluation: string;
+  gender: string;
+  age: string;
 }
 
 interface CombinedCreateResponse {
   status: number;
   message: string;
-  [key: string]: unknown; // Replaced 'any' with 'unknown' for additional fields
+  session_id: string;
+  summary_id: string;
+  diagnosis_validation_id: string;
+  physical_evaluation: string;
+  gender: string;
+  age: string;
+  [key: string]: unknown;
 }
 
 export async function POST(request: Request) {
@@ -38,6 +50,7 @@ export async function POST(request: Request) {
     }
 
     const body: CombinedCreateRequest = await request.json();
+    console.log("Combined Create Request Body:", JSON.stringify(body, null, 2));
 
     // Validate required fields
     if (
@@ -56,9 +69,50 @@ export async function POST(request: Request) {
       !Array.isArray(body.data_json.diagnoses) ||
       !Array.isArray(body.data_json.symptoms) ||
       !body.audio_url ||
-      !body.conversation
+      !body.conversation ||
+      body.physical_evaluation === undefined ||
+      body.gender === undefined ||
+      body.age === undefined ||
+      body.data_json.physical_evaluation === undefined ||
+      body.data_json.gender === undefined ||
+      body.data_json.age === undefined
     ) {
-      console.error("Invalid request body: Missing or invalid required fields");
+      console.error(
+        "Invalid request body: Missing or invalid required fields",
+        {
+          missingFields: {
+            session_id: !body.session_id,
+            doctor_id: !body.doctor_id,
+            patient_summary: !body.patient_summary,
+            doctor_summary: !body.doctor_summary,
+            notes_summary: !body.notes_summary,
+            diagnosis: !body.diagnosis || !Array.isArray(body.diagnosis),
+            data_json: !body.data_json,
+            data: !body.data_json || !Array.isArray(body.data_json?.data),
+            data_json_patient_summary:
+              !body.data_json || !body.data_json.patient_summary,
+            data_json_doctor_summary:
+              !body.data_json || !body.data_json.doctor_summary,
+            data_json_doctor_note_summary:
+              !body.data_json || !body.data_json.doctor_note_summary,
+            data_json_diagnoses:
+              !body.data_json || !Array.isArray(body.data_json.diagnoses),
+            data_json_symptoms:
+              !body.data_json || !Array.isArray(body.data_json.symptoms),
+            audio_url: !body.audio_url,
+            conversation: !body.conversation,
+            physical_evaluation: body.physical_evaluation === undefined,
+            gender: body.gender === undefined,
+            age: body.age === undefined,
+            data_json_physical_evaluation:
+              !body.data_json ||
+              body.data_json.physical_evaluation === undefined,
+            data_json_gender:
+              !body.data_json || body.data_json.gender === undefined,
+            data_json_age: !body.data_json || body.data_json.age === undefined,
+          },
+        }
+      );
       return NextResponse.json(
         {
           message: "Invalid request body: Missing or invalid required fields",
@@ -75,16 +129,23 @@ export async function POST(request: Request) {
           "Content-Type": "application/json",
           Accept: "application/json",
         },
+        timeout: 20000, // 10s timeout
       }
     );
 
+    console.log(
+      "Combined Create Response:",
+      JSON.stringify(response.data, null, 2)
+    );
     return NextResponse.json(response.data, { status: response.status });
   } catch (error) {
     if (axios.isAxiosError(error) && error.response) {
       console.error(
-        `Combined Create API error: HTTP ${error.response.status} - ${
-          error.response.data?.message || error.message
-        }`
+        `Combined Create API error: HTTP ${error.response.status}`,
+        {
+          message: error.response.data?.message || error.message,
+          responseData: error.response.data,
+        }
       );
       return NextResponse.json(
         {
@@ -94,7 +155,10 @@ export async function POST(request: Request) {
         { status: error.response.status }
       );
     }
-    console.error("Combined Create API error:", JSON.stringify(error, null, 2));
+    console.error("Combined Create API error:", {
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
     return NextResponse.json(
       { message: "Internal Server Error" },
       { status: 500 }

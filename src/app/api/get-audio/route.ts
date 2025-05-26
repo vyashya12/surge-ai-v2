@@ -1,28 +1,31 @@
-import { NextApiRequest, NextApiResponse } from "next";
+import { NextResponse } from "next/server";
 import fs from "fs/promises";
 import path from "path";
 
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse
-) {
-  if (req.method !== "GET") {
-    return res.status(405).json({ message: "Method Not Allowed" });
-  }
-
+export async function GET(request: Request) {
   try {
-    const { filename } = req.query;
-    if (typeof filename !== "string") {
-      return res.status(400).json({ message: "Missing or invalid filename" });
+    const { searchParams } = new URL(request.url);
+    const filename = searchParams.get("filename");
+    if (!filename) {
+      return NextResponse.json(
+        { message: "Missing filename" },
+        { status: 400 }
+      );
     }
 
     const filePath = path.join(process.cwd(), "audio", filename);
     const buffer = await fs.readFile(filePath);
     const base64Data = buffer.toString("base64");
+    const mimetype = filename.endsWith(".webm")
+      ? "audio/webm;codecs=opus"
+      : "audio/wav";
 
-    res.status(200).json({ data: base64Data, mimetype: "audio/wav" });
+    return NextResponse.json({ data: base64Data, mimetype }, { status: 200 });
   } catch (error) {
     console.error("Get audio error:", error);
-    res.status(500).json({ message: "Failed to retrieve audio" });
+    return NextResponse.json(
+      { message: "Failed to retrieve audio" },
+      { status: 500 }
+    );
   }
 }

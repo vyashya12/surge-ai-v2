@@ -37,15 +37,15 @@ ChartJS.register(BarElement, CategoryScale, LinearScale, Tooltip);
 
 // Get supported MIME type
 const getSupportedMimeType = (): string => {
-  if (typeof window === "undefined") return "audio/wav";
-  if (MediaRecorder.isTypeSupported("audio/wav")) {
-    return "audio/wav";
-  }
-  console.error(
-    "audio/wav not supported, falling back to audio/webm;codecs=opus"
-  );
+  if (typeof window === "undefined") return "audio/webm;codecs=opus";
   if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
     return "audio/webm;codecs=opus";
+  }
+  console.warn(
+    "audio/webm;codecs=opus not supported, falling back to audio/wav"
+  );
+  if (MediaRecorder.isTypeSupported("audio/wav")) {
+    return "audio/wav";
   }
   console.error("No supported audio format found, defaulting to audio/webm");
   return "audio/webm";
@@ -243,22 +243,20 @@ export default function AudioRecorder() {
       };
     }
 
+    const primaryDiagnosis = state.diagnosis.diagnoses.reduce((max, diag) =>
+      diag.likelihood > max.likelihood ? diag : max
+    );
     const labels = ["Diagnosis"];
-    const colors = [
-      "#4ade80",
-      "#60a5fa",
-      "#facc15",
-      "#f87171",
-      "#a78bfa",
-      "#fb923c",
-    ];
+    const colors = ["#4ade80"];
 
-    const datasets = state.diagnosis.diagnoses.map((diag, index) => ({
-      label: diag.diagnosis,
-      data: [diag.likelihood],
-      backgroundColor: colors[index % colors.length],
-      barThickness: 30,
-    }));
+    const datasets = [
+      {
+        label: primaryDiagnosis.diagnosis,
+        data: [primaryDiagnosis.likelihood],
+        backgroundColor: colors[0],
+        barThickness: 30,
+      },
+    ];
 
     return { labels, datasets };
   };
@@ -270,13 +268,21 @@ export default function AudioRecorder() {
     maintainAspectRatio: false,
     scales: {
       x: {
-        stacked: true,
         min: 0,
         max: 100,
+        title: {
+          display: true,
+          text: "Likelihood (%)",
+        },
         grid: { display: false },
-        ticks: { display: false },
       },
-      y: { stacked: true, display: false },
+      y: {
+        title: {
+          display: true,
+          text: "Diagnosis",
+        },
+        display: false,
+      },
     },
     plugins: {
       legend: { display: false },
@@ -306,10 +312,11 @@ export default function AudioRecorder() {
         const arrayBuffer = await audioBlob.arrayBuffer();
         console.log("Blob header:", new Uint8Array(arrayBuffer.slice(0, 20)));
         const formData = new FormData();
+        const extension = audioBlob.type.includes("webm") ? "webm" : "wav";
         formData.append(
           "audio",
           audioBlob,
-          `chunk-${sessionIdRef.current}.wav`
+          `chunk-${sessionIdRef.current}.${extension}`
         );
 
         const response = await fetch("/api/deepgram/transcribe", {
@@ -408,7 +415,7 @@ export default function AudioRecorder() {
             labeledSegments: formattedConversation,
             suggestions: [...new Set(suggestionsData)],
             summary: summaryData || prev.summary,
-            diagnosis: diagnosisData || prev.diagnosis,
+            diagnosis: diagnosisData, // Replace old diagnosis with new data
             keypoints: [...new Set(keypointsData)],
             error: null,
             isSending: false,
@@ -493,7 +500,7 @@ export default function AudioRecorder() {
       if (!response.ok) {
         const errorData = await response.text();
         console.error(
-          `Save audio request failed: ${response.status} ${errorData}`
+          `Save audio request failed: HTTP ${response.status} - ${errorData}`
         );
         throw new Error(
           errorData || `Failed to save audio: HTTP ${response.status}`
@@ -510,7 +517,7 @@ export default function AudioRecorder() {
         error:
           error instanceof Error
             ? error.message
-            : "Failed to save audio locally",
+            : "Failed to save audio locally. Please check if the /api/save-audio endpoint supports POST requests.",
       }));
     }
   }, [mediaRecorder, token]);
@@ -545,6 +552,7 @@ export default function AudioRecorder() {
       const buffer = Buffer.from(base64Data, "base64");
       const audioBlob = new Blob([buffer], { type: mimetype });
 
+      // Upload to S3
       const formData = new FormData();
       formData.append("audio", audioBlob, audioFilenameRef.current);
       formData.append("session_id", sessionIdRef.current);
@@ -559,6 +567,12 @@ export default function AudioRecorder() {
         throw new Error(result.message || "Failed to upload audio to S3");
       }
 
+      const audioUrl = result.audio_url;
+      if (!audioUrl) {
+        throw new Error("No audio URL returned from S3 upload");
+      }
+
+      // Prepare combined-create-v2 payload
       const conversationText = state.labeledSegments
         .map((seg) => `${seg.speaker}: ${seg.text}`)
         .join("\n");
@@ -582,19 +596,22 @@ export default function AudioRecorder() {
           gender: state.gender || "",
           age: state.age || "",
         },
-        audio_url:
-          result.audio_url ||
-          `s3://surge-ai-audio-uploads/audio/${audioFilenameRef.current}`,
+        audio_url: audioUrl,
         conversation: conversationText,
         physical_evaluation: state.physicalEvaluation || "",
         gender: state.gender || "",
         age: state.age || "",
       };
 
+      // Call combined-create-v2
       const createResult = await createCombined(token)(payload);
       if (!createResult.ok) {
-        throw new Error(createResult.error || "Failed to save session");
+        throw new Error(
+          createResult.error || "Failed to create combined record"
+        );
       }
+
+      console.log("Combined record created:", createResult.value);
 
       // Delete local file
       const deleteResponse = await fetch("/api/delete-audio", {
@@ -621,10 +638,13 @@ export default function AudioRecorder() {
       }));
       return true;
     } catch (error: any) {
-      console.error("Error uploading audio:", error);
+      console.error(
+        "Error uploading audio or creating combined record:",
+        error
+      );
       setState((prev) => ({
         ...prev,
-        error: error.message || "Failed to upload audio",
+        error: error.message || "Failed to upload audio or save session",
         isSending: false,
       }));
       return false;
@@ -634,6 +654,11 @@ export default function AudioRecorder() {
   const startRecording = useCallback(async () => {
     if (!isHydrated) return;
     try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error(
+          "MediaDevices API not supported. Please ensure you're using a secure context (https) and a compatible browser."
+        );
+      }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mimeType = getSupportedMimeType();
       console.log(`Starting recording with MIME type: ${mimeType}`);
@@ -725,7 +750,9 @@ export default function AudioRecorder() {
       console.error("startRecording error:", error);
       setState((prev) => ({
         ...prev,
-        error: error.message || "Failed to start recording",
+        error:
+          error.message ||
+          "Failed to start recording. Ensure microphone access is granted and you're using https.",
       }));
     }
   }, [isHydrated, sendAudio]);

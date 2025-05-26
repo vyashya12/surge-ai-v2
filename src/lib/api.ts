@@ -152,14 +152,14 @@ export const getSessionHistory =
     const client = createApiClient(token);
     const response = await client.get<{
       sessions: Session[];
-      status: number;
+      status?: number;
       message?: string;
     }>(`/session-history/${doctorId}`);
-    return response.ok && response.value.status === 200
+    return response.ok
       ? { ok: true, value: response.value.sessions }
       : {
           ok: false,
-          error: response.toString() || "Failed to retrieve session history",
+          error: response.error || "Failed to retrieve session history",
         };
   };
 
@@ -468,7 +468,7 @@ export const createCombined =
     try {
       const client = createApiClient(token);
       const response = await client.post<CombinedCreateResponse>(
-        "/create-combined-v2",
+        "/create_combined",
         data
       );
       return response;
