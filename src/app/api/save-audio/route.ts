@@ -13,16 +13,13 @@ export default async function handler(
 
   try {
     const audioDir = path.join(process.cwd(), "audio");
-    await ensureDir(audioDir); // Create audio/ if it doesn’t exist
+    await ensureDir(audioDir);
 
-    const { sessionId } = req.body;
-    if (!sessionId) {
-      return res.status(400).json({ message: "Missing sessionId" });
-    }
-
-    const audio = req.body.audio;
-    if (!audio || !audio.data) {
-      return res.status(400).json({ message: "Missing audio data" });
+    const { sessionId, audio } = req.body;
+    if (!sessionId || !audio || !audio.data) {
+      return res
+        .status(400)
+        .json({ message: "Missing sessionId or audio data" });
     }
 
     const filename = `session-${sessionId}.wav`;

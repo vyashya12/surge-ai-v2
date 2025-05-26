@@ -41,10 +41,13 @@ const getSupportedMimeType = (): string => {
   if (MediaRecorder.isTypeSupported("audio/wav")) {
     return "audio/wav";
   }
+  console.error(
+    "audio/wav not supported, falling back to audio/webm;codecs=opus"
+  );
   if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
     return "audio/webm;codecs=opus";
   }
-  console.warn("Falling back to audio/webm");
+  console.error("No supported audio format found, defaulting to audio/webm");
   return "audio/webm";
 };
 
@@ -469,6 +472,12 @@ export default function AudioRecorder() {
       const arrayBuffer = await audioBlob.arrayBuffer();
       const base64Data = Buffer.from(arrayBuffer).toString("base64");
 
+      console.log("Sending to /api/save-audio:", {
+        sessionId: sessionIdRef.current,
+        audioSize: audioBlob.size,
+        mimeType: mimeType,
+      });
+
       const response = await fetch("/api/save-audio", {
         method: "POST",
         headers: {
@@ -477,18 +486,23 @@ export default function AudioRecorder() {
         },
         body: JSON.stringify({
           sessionId: sessionIdRef.current,
-          audio: { data: base64Data, mimetype: mimeType },
+          audio: { data: base64Data, type: mimeType },
         }),
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to save audio locally");
+        const errorData = await response.text();
+        console.error(
+          `Save audio request failed: ${response.status} ${errorData}`
+        );
+        throw new Error(
+          errorData || `Failed to save audio: HTTP ${response.status}`
+        );
       }
 
       const { filename } = await response.json();
       audioFilenameRef.current = filename;
-      console.log(`Saved audio locally on server: ${filename}`);
+      console.log(`Saved audio to ${filename}`);
     } catch (error) {
       console.error("saveAudioLocally error:", error);
       setState((prev) => ({
@@ -508,7 +522,7 @@ export default function AudioRecorder() {
         error: "No audio file to upload",
         isSending: false,
       }));
-      return;
+      return false;
     }
 
     setState((prev) => ({ ...prev, isSending: true }));
@@ -570,7 +584,7 @@ export default function AudioRecorder() {
         },
         audio_url:
           result.audio_url ||
-          `s3://surge-ai-audio-uploads/${audioFilenameRef.current}`,
+          `s3://surge-ai-audio-uploads/audio/${audioFilenameRef.current}`,
         conversation: conversationText,
         physical_evaluation: state.physicalEvaluation || "",
         gender: state.gender || "",
@@ -582,7 +596,7 @@ export default function AudioRecorder() {
         throw new Error(createResult.error || "Failed to save session");
       }
 
-      // Delete local file after successful upload
+      // Delete local file
       const deleteResponse = await fetch("/api/delete-audio", {
         method: "POST",
         headers: {
@@ -597,7 +611,7 @@ export default function AudioRecorder() {
           await deleteResponse.json()
         );
       } else {
-        console.log(`Deleted local audio file: ${audioFilenameRef.current}`);
+        console.log("Deleted local audio file:", audioFilenameRef.current);
       }
 
       setState((prev) => ({
@@ -605,6 +619,7 @@ export default function AudioRecorder() {
         isSending: false,
         error: null,
       }));
+      return true;
     } catch (error: any) {
       console.error("Error uploading audio:", error);
       setState((prev) => ({
@@ -612,6 +627,7 @@ export default function AudioRecorder() {
         error: error.message || "Failed to upload audio",
         isSending: false,
       }));
+      return false;
     }
   }, [token, doctorId, state]);
 
@@ -622,7 +638,6 @@ export default function AudioRecorder() {
       const mimeType = getSupportedMimeType();
       console.log(`Starting recording with MIME type: ${mimeType}`);
       const newMediaRecorder = new MediaRecorder(stream, { mimeType });
-
       allAudioChunksRef.current = [];
       newAudioChunksRef.current = [];
       isFinalSendRef.current = false;
@@ -691,7 +706,7 @@ export default function AudioRecorder() {
         }
       };
 
-      newMediaRecorder.start(10000); // 10s chunks
+      newMediaRecorder.start(15000); // 15s chunks
       setMediaRecorder(newMediaRecorder);
       setState((prev) => ({
         ...prev,
@@ -780,7 +795,7 @@ export default function AudioRecorder() {
           isStopping: false,
           error: "Recording stopped due to processing timeout",
         }));
-      }, 15000);
+      }, 20000); // Extended to 20s
       return;
     }
     try {
@@ -835,14 +850,18 @@ export default function AudioRecorder() {
 
   const handleAccept = useCallback(async () => {
     console.log("Accepted");
-    await uploadAudioToS3();
-    clearResults();
+    const success = await uploadAudioToS3();
+    if (success) {
+      clearResults();
+    }
   }, [uploadAudioToS3, clearResults]);
 
   const handleReject = useCallback(async () => {
     console.log("Rejected");
-    await uploadAudioToS3();
-    clearResults();
+    const success = await uploadAudioToS3();
+    if (success) {
+      clearResults();
+    }
   }, [uploadAudioToS3, clearResults]);
 
   const handleToggleRecording = useCallback(async () => {
@@ -968,14 +987,13 @@ export default function AudioRecorder() {
             </Button>
           )}
         </div>
-
         {state.suggestions.length > 0 && (
           <div className="mb-6">
             <h3 className="font-bold text-lg sm:text-xl mb-2">
               Doctor Reply Suggestions
             </h3>
             <div className="bg-white p-4 rounded-lg shadow-sm">
-              <ul className="list-disc pl-5 text-sm sm:text-base">
+              <ul className="list-disc pl-5">
                 {state.suggestions.map((suggestion, index) => (
                   <li key={index} className="mb-2">
                     {formatText(suggestion)}
@@ -985,11 +1003,10 @@ export default function AudioRecorder() {
             </div>
           </div>
         )}
-
         {state.diagnosis && (
           <div className="mb-6">
             <h3 className="font-bold mb-2 text-lg sm:text-xl">Diagnosis</h3>
-            <div className="bg-white p-4 rounded-md shadow-sm">
+            <div className="bg-white p-4 rounded-lg shadow-sm">
               <p className="mb-2 text-sm sm:text-base">
                 <strong>Diagnoses:</strong>
               </p>
@@ -1007,13 +1024,12 @@ export default function AudioRecorder() {
             </div>
           </div>
         )}
-
         {state.summary && (
           <div className="mb-6">
             <h3 className="font-bold mb-2 text-lg sm:text-xl">
               Conversation Summary
             </h3>
-            <div className="bg-white p-4 rounded-md shadow-sm">
+            <div className="bg-white p-4 rounded-lg shadow-sm">
               <p className="mb-2 text-sm sm:text-base">
                 <strong>Patient Summary:</strong>{" "}
                 {formatText(state.summary.patient_summary)}
@@ -1025,7 +1041,6 @@ export default function AudioRecorder() {
             </div>
           </div>
         )}
-
         {(state.keypoints.length > 0 || state.diagnosis || state.summary) && (
           <div className="mb-6">
             <h3 className="font-bold mb-2 text-lg sm:text-xl">
@@ -1070,14 +1085,14 @@ export default function AudioRecorder() {
               <div className="flex justify-end space-x-4">
                 <Button
                   onClick={handleAccept}
-                  className="w-full sm:w-auto px-6 py-2 bg-green-500 hover:bg-green-600 text-sm sm:text-base"
+                  className="w-full sm:w-auto px-6 py-2 text-sm sm:text-base bg-green-500 hover:bg-green-600"
                   disabled={state.isSending || state.isStopping}
                 >
                   Accept
                 </Button>
                 <Button
                   onClick={handleReject}
-                  className="w-full sm:w-auto px-6 py-2 bg-red-500 hover:bg-red-600 text-sm sm:text-base"
+                  className="w-full sm:w-auto px-6 py-2 text-sm sm:text-base bg-red-500 hover:bg-red-600"
                   disabled={state.isSending || state.isStopping}
                 >
                   Reject
@@ -1086,13 +1101,12 @@ export default function AudioRecorder() {
             </div>
           </div>
         )}
-
         {state.labeledSegments.length > 0 && (
           <div className="mb-6">
             <h3 className="font-bold mb-2 text-lg sm:text-xl">
               Labeled Conversation
             </h3>
-            <div className="bg-white p-4 rounded-md shadow-sm">
+            <div className="bg-white p-4 rounded-lg shadow-sm">
               {(state.isSending || state.isStopping) && (
                 <p className="text-gray-500 text-sm mb-2">
                   {state.isStopping
@@ -1114,10 +1128,12 @@ export default function AudioRecorder() {
           </div>
         )}
       </div>
-
-      {/* Keypoints Panel for Mobile */}
+      {/* Keypoints Mobile */}
       <div className="sm:hidden fixed bottom-4 left-4">
-        <Dialog open={isKeypointsOpen} onOpenChange={setIsKeypointsOpen}>
+        <Dialog
+          open={isKeypointsOpen}
+          onOpenChange={(open) => setIsKeypointsOpen(open)}
+        >
           <DialogTrigger asChild>
             <Button className="bg-blue-500 hover:bg-blue-600 p-3 rounded-full">
               <Menu className="w-5 h-5" />
@@ -1139,8 +1155,7 @@ export default function AudioRecorder() {
           </DialogContent>
         </Dialog>
       </div>
-
-      {/* Keypoints Sidebar for Desktop */}
+      {/* Keypoints Sidebar Desktop */}
       <div className="hidden sm:block w-64 bg-white shadow-lg fixed right-0 top-0 h-full p-4">
         <h3 className="font-bold mb-2 text-lg">Key Points</h3>
         {state.keypoints.length > 0 ? (
@@ -1152,7 +1167,7 @@ export default function AudioRecorder() {
             ))}
           </ul>
         ) : (
-          <p className="text-gray-500">No key points available.</p>
+          <p className="text-gray-500 text-sm">No key points available.</p>
         )}
       </div>
     </div>

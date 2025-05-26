@@ -5,6 +5,9 @@ import {
   Summary,
   DiagnosisSuggestion,
   Result,
+  DiagnosisValidation,
+  DiagnosisValidationRequest,
+  DiagnosisValidationResponse,
 } from "@/types";
 
 // Custom error interface for safe error handling
@@ -162,20 +165,28 @@ export const getSessionHistory =
 
 // Get all diagnosis validations
 export const getAllDiagnosisValidations =
-  (baseUrl: string, token?: string | null) =>
-  async (): Promise<Result<Diagnosis[], string>> => {
-    const client = createApiClient(token!);
-    const response = await client.get<{
-      diagnoses: Diagnosis[];
-      status: number;
-      message?: string;
-    }>("/diagnosis-validation/all");
-    return response.ok && response.value.status === 200
-      ? { ok: true, value: response.value.diagnoses }
-      : {
-          ok: false,
-          error: response.toString() || "Failed to fetch diagnoses",
-        };
+  (token?: string | null) =>
+  async (): Promise<Result<DiagnosisValidation[], string>> => {
+    try {
+      const client = createApiClient(token!);
+      const response = await client.get<DiagnosisValidationResponse>(
+        "/validation/unvalidated"
+      );
+      if (response.ok) {
+        return { ok: true, value: response.value.diagnoses };
+      }
+      return {
+        ok: false,
+        error: response.error || "Failed to fetch diagnoses",
+      };
+    } catch (error: unknown) {
+      const appError = error as AppError;
+      console.error("getAllDiagnosisValidations fetch error:", appError);
+      return {
+        ok: false,
+        error: appError.message || "Failed to fetch diagnoses",
+      };
+    }
   };
 
 // Get summary by ID
