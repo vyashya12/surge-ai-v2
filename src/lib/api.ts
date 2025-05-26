@@ -211,8 +211,12 @@ export const getSummaryFromConversation =
   };
 
 // Request and response types for specific APIs
+interface ConversationSegment {
+  [speaker: string]: string;
+}
+
 interface SuggestionsRequest {
-  data: { doctor: string; patient: string }[];
+  data: ConversationSegment[];
 }
 
 interface SuggestionsResponse {
@@ -231,7 +235,6 @@ export const getSuggestions =
         "/doctor_reply_suggestions",
         data
       );
-
       return response;
     } catch (error: unknown) {
       const appError = error as AppError;
@@ -245,9 +248,12 @@ export const getSuggestions =
 
 // Suggest diagnoses
 interface DiagnosesRequest {
-  conversation_input: { data: { doctor: string; patient: string }[] };
+  conversation_input: { data: ConversationSegment[] };
   doctors_notes: string;
   threshold: number;
+  physical_evaluation: string;
+  gender: string;
+  age: string;
 }
 
 export const suggestDiagnoses =
@@ -289,7 +295,6 @@ export const labelConversation =
         "/label_conversation",
         data
       );
-
       return response;
     } catch (error: unknown) {
       const appError = error as AppError;
@@ -303,7 +308,7 @@ export const labelConversation =
 
 // Get summary
 interface SummaryRequest {
-  data: Array<{ doctor?: string; patient?: string }>;
+  data: ConversationSegment[];
 }
 
 interface SummaryResponse {
@@ -320,7 +325,6 @@ export const getSummary =
         "/separate_conversation_summary",
         data
       );
-
       return response;
     } catch (error: unknown) {
       const appError = error as AppError;
@@ -334,9 +338,12 @@ export const getSummary =
 
 // Get diagnosis
 interface DiagnosisRequest {
-  conversation_input: { data: { doctor: string; patient: string }[] };
+  conversation_input: { data: ConversationSegment[] };
   doctors_notes: string;
   threshold: number;
+  physical_evaluation: string;
+  gender: string;
+  age: string;
 }
 
 interface DiagnosisResponse {
@@ -344,6 +351,10 @@ interface DiagnosisResponse {
   symptoms: string[];
   source: string;
   similarity: number;
+  doctors_notes?: string;
+  physical_evaluation?: string;
+  gender?: string;
+  age?: string;
 }
 
 export const getDiagnosis =
@@ -357,7 +368,6 @@ export const getDiagnosis =
         "/rag/diagnose",
         data
       );
-
       return response;
     } catch (error: unknown) {
       const appError = error as AppError;
@@ -371,7 +381,7 @@ export const getDiagnosis =
 
 // Get keypoints
 interface KeypointsRequest {
-  conversation_input: { data: { doctor: string; patient: string }[] };
+  conversation_input: { data: ConversationSegment[] };
   doctors_notes: string;
 }
 
@@ -390,7 +400,6 @@ export const getKeypoints =
         "/keypoint_summary",
         data
       );
-
       return response;
     } catch (error: unknown) {
       const appError = error as AppError;
@@ -402,6 +411,7 @@ export const getKeypoints =
     }
   };
 
+// Create combined record
 interface CombinedCreateRequest {
   session_id: string;
   doctor_id: string;
@@ -410,25 +420,36 @@ interface CombinedCreateRequest {
   notes_summary: string;
   diagnosis: Array<{ diagnosis: string; likelihood: number }>;
   data_json: {
-    data: Array<unknown>;
+    data: ConversationSegment[];
     patient_summary: string;
     doctor_summary: string;
     doctor_note_summary: string;
     diagnoses: Array<{ diagnosis: string; likelihood: number }>;
     symptoms: string[];
+    physical_evaluation: string;
+    gender: string;
+    age: string;
   };
   audio_url: string;
   conversation: string;
+  physical_evaluation: string;
+  gender: string;
+  age: string;
 }
 
 interface CombinedCreateResponse {
   status: number;
   message: string;
-  [key: string]: unknown; // Replaced 'any' with 'unknown' for additional fields
+  session_id: string;
+  summary_id: string;
+  diagnosis_validation_id: string;
+  physical_evaluation: string;
+  gender: string;
+  age: string;
+  [key: string]: unknown;
 }
 
-// Create combined record
-export const createCombinedRecord =
+export const createCombined =
   (token: string | null) =>
   async (
     data: CombinedCreateRequest
@@ -436,19 +457,13 @@ export const createCombinedRecord =
     try {
       const client = createApiClient(token);
       const response = await client.post<CombinedCreateResponse>(
-        "/combined-create-v2",
+        "/create-combined-v2",
         data
       );
-
-      console.log(
-        "createCombinedRecord fetch response:",
-        JSON.stringify(response, null, 2)
-      );
-
       return response;
     } catch (error: unknown) {
       const appError = error as AppError;
-      console.error("createCombinedRecord fetch error:", appError);
+      console.error("createCombined fetch error:", appError);
       return {
         ok: false,
         error: appError.message || "Failed to create combined record",
