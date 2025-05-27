@@ -56,9 +56,12 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-100 flex-col gap-2">
-      <p className='text-lg'>Log in to Surge AI</p>
-      <Card className="w-full max-w-md">
+    <div className="flex min-h-screen items-center justify-around bg-gray-50">
+      <div className='text-center flex flex-col gap-4 justify-center'>
+        <p className="text-2xl font-bold">Surge AI</p>
+        <p className="text-md ">AI-Powered Transcription for Cleaner, Faster Clinical Notes.</p>
+      </div>
+      <Card className="w-full max-w-lg py-8">
         <CardHeader>
           <CardTitle>Welcome back!</CardTitle>
         </CardHeader>

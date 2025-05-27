@@ -2,18 +2,26 @@
 
 import { useEffect, useState } from "react";
 import { getAllDiagnosisValidations } from "@/lib/api";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { getAuthData } from "@/lib/auth";
 import { DiagnosisValidation } from "@/types";
 import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
 import { useSidebarCollapse } from "@/contexts/sidebarContext";
+import { DefaultPagination } from "@/components/ui/pagination";
 
 type PageState = {
   data: DiagnosisValidation[] | null;
@@ -41,6 +49,7 @@ export default function ValidationPage() {
     loading: true,
     error: null,
   });
+  const [active, setActive] = useState(1);
 
   const { isCollapsed } = useSidebarCollapse();
 
@@ -52,7 +61,7 @@ export default function ValidationPage() {
     <div className="bg-gray-50 min-h-screen p-4 sm:p-8">
       <p className="font-bold text-xl">Validation</p>
       <Card
-        className={`mt-8 overflow-x-auto ${
+        className={`mt-8 overflow-auto h-[36rem] relative ${
           isCollapsed ? "w-[84rem]" : "w-[70rem]"
         }`}
       >
@@ -77,7 +86,7 @@ export default function ValidationPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {state.data.map((diagnosis) => (
+                {[...state.data, ...state.data].slice(active-1, active-1+10).map((diagnosis) => (
                   <TableRow key={diagnosis.id}>
                     <TableCell>{diagnosis.diagnosis}</TableCell>
                     <TableCell>
@@ -97,6 +106,9 @@ export default function ValidationPage() {
             <p>No data available</p>
           )}
         </CardContent>
+          <div className="absolute right-4 bottom-4 mt-4">
+            <DefaultPagination active={active} setActive={setActive} />
+          </div>
       </Card>
     </div>
   );

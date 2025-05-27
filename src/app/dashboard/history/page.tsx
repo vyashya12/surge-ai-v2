@@ -175,7 +175,7 @@ export default function HistoryPage() {
         }
       `}</style>
       <p className="font-bold text-xl">History</p>
-      <Card className="mt-8">
+      <Card className="mt-8 h-[35rem]">
         <CardHeader>
           <CardTitle>
             🩺 Doctor ID: {authData.ok ? authData.value.user.id : "N/A"}
@@ -232,11 +232,11 @@ export default function HistoryPage() {
                     >
                       <DialogContent className="conversation-modal-dark">
                         <DialogHeader>
-                          <DialogTitle>🗣️ Conversation Transcript</DialogTitle>
+                          <DialogTitle>Conversation Transcript</DialogTitle>
                         </DialogHeader>
-                        <pre>
+                        <p>
                           {session.conversation || "No transcript available"}
-                        </pre>
+                        </p>
                       </DialogContent>
                     </Dialog>
                     <hr className="my-2" />

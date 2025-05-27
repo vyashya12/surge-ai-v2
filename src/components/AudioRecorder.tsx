@@ -825,259 +825,279 @@ export default function AudioRecorder() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-gray-100 p-4 sm:p-6">
-      <h1 className="text-2xl sm:text-3xl font-bold mb-6 text-center">
-        Surge AI
-      </h1>
-      <div className="max-w-3xl mx-auto w-full">
-        {state.error && (
-          <div className="mb-4 p-4 bg-red-100 text-red-700 rounded-md text-sm sm:text-base">
-            {state.error}
-          </div>
-        )}
-        {state.isSending && (
-          <div className="mb-4 p-4 bg-blue-100 text-blue-700 rounded-md text-sm sm:text-base">
-            Processing audio, please wait...
-          </div>
-        )}
-        <div className="grid grid-cols-1 gap-4 mb-6">
-          <Textarea
-            value={state.doctorsNotes}
-            onChange={handleDoctorsNotesChange}
-            placeholder="Enter doctor's notes..."
-            rows={4}
-            className="w-full p-3 border rounded-md text-sm sm:text-base"
-          />
-          <Textarea
-            value={state.physicalEvaluation}
-            onChange={handlePhysicalEvaluationChange}
-            placeholder="Enter physical evaluation (e.g., blood pressure, heart rate)..."
-            rows={4}
-            className="w-full p-3 border rounded-md text-sm sm:text-base"
-          />
-          <Select onValueChange={handleGenderChange} value={state.gender}>
-            <SelectTrigger className="w-full p-2 text-sm sm:text-base">
-              <SelectValue placeholder="Select Gender" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="male">Male</SelectItem>
-              <SelectItem value="female">Female</SelectItem>
-              <SelectItem value="undisclosed">Undisclosed</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select onValueChange={handleAgeChange} value={state.age}>
-            <SelectTrigger className="w-full p-2 text-sm sm:text-base">
-              <SelectValue placeholder="Select Age Range" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="0-18">0-18</SelectItem>
-              <SelectItem value="19-30">19-30</SelectItem>
-              <SelectItem value="31-50">31-50</SelectItem>
-              <SelectItem value="51-70">51-70</SelectItem>
-              <SelectItem value="71+">71+</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="flex flex-wrap justify-center gap-3 mb-6">
-          <Button
-            onClick={handleToggleRecording}
-            className={`w-full sm:w-auto px-6 py-3 text-sm sm:text-base ${
-              state.isRecording
-                ? "bg-red-500 hover:bg-red-600"
-                : "bg-green-500 hover:bg-green-600"
-            }`}
-            disabled={state.isSending}
-          >
-            {state.isRecording ? "Stop Recording" : "Start Recording"}
-          </Button>
-          {!state.isRecording && (
-            <Button
-              onClick={clearResults}
-              className="w-full sm:w-auto px-6 py-3 text-sm sm:text-base bg-gray-500 hover:bg-gray-600"
-              disabled={state.isSending || state.labeledSegments.length === 0}
-            >
-              Clear Results
-            </Button>
-          )}
-        </div>
-        {state.suggestions.length > 0 && (
-          <div className="mb-6">
-            <h3 className="font-bold text-lg sm:text-xl mb-2">
-              Doctor Reply Suggestions
-            </h3>
-            <div className="bg-white p-4 rounded-lg shadow-sm">
-              <ul className="list-disc pl-5">
-                {state.suggestions.map((suggestion, index) => (
-                  <li key={index} className="mb-2 text-sm sm:text-base">
-                    {formatText(suggestion)}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        )}
-        {state.diagnosis && (
-          <div className="mb-6">
-            <h3 className="font-bold text-lg sm:text-xl mb-2">Diagnosis</h3>
-            <div className="bg-white p-4 rounded-lg shadow-sm">
-              <p className="mb-2 text-sm sm:text-base">
-                <strong>Diagnoses:</strong>
-              </p>
-              <ul className="list-disc pl-5 mb-2 text-sm sm:text-base">
-                {state.diagnosis.diagnoses.map((diag, index) => (
-                  <li key={index}>
-                    {formatText(diag.diagnosis)} (Likelihood: {diag.likelihood}
-                    %)
-                  </li>
-                ))}
-              </ul>
-              <div className="h-32 sm:h-40">
-                <Bar data={getChartData()} options={chartOptions} />
+    <div className="p-4 sm:p-8 bg-gray-50 min-h-screen">
+      <p className="font-bold text-xl">Home</p>
+      <div className="mt-8 flex gap-4">
+        <Card className="w-full sm:w-8/12 p-8 ">
+        <CardTitle>
+Start a New Consultation
+        </CardTitle>
+          <div>
+            {state.error && (
+              <div className="mb-4 p-4 bg-red-100 text-red-700 rounded-md">
+                {state.error}
               </div>
+            )}
+            {state.isSending && (
+              <div className="mb-4 p-4 bg-blue-100 text-blue-700 rounded-md text-sm sm:text-base">
+                Processing audio, please wait...
+              </div>
+            )}
+            <div className="grid grid-cols-1 gap-4">
+              <Textarea
+                rows={6}
+                value={state.doctorsNotes}
+                onChange={handleDoctorsNotesChange}
+                placeholder="Enter doctor's notes here..."
+                className="w-full p-4 border rounded-md bg-white"
+              />
+              <Textarea
+                rows={6}
+                value={state.physicalEvaluation}
+                onChange={handlePhysicalEvaluationChange}
+                placeholder="Enter physical evaluation (e.g., blood pressure, heart rate)..."
+                className="w-full p-4 border rounded-md bg-white"
+              />
             </div>
-          </div>
-        )}
-        {state.summary && (
-          <div className="mb-6">
-            <h3 className="font-bold text-lg sm:text-xl mb-2">
-              Conversation Summary
-            </h3>
-            <div className="bg-white p-4 rounded-lg shadow-sm">
-              <p className="mb-2 text-sm sm:text-base">
-                <strong>Patient Summary:</strong>{" "}
-                {formatText(state.summary.patient_summary)}
-              </p>
-              <p className="mb-2 text-sm sm:text-base">
-                <strong>Doctor Summary:</strong>{" "}
-                {formatText(state.summary.doctor_summary)}
-              </p>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+              <Select onValueChange={handleGenderChange} value={state.gender}>
+                <SelectTrigger className="w-full bg-white">
+                  <SelectValue placeholder="Select Gender" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="male">Male</SelectItem>
+                  <SelectItem value="female">Female</SelectItem>{" "}
+                  <SelectItem value="undisclosed">Undisclosed</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select onValueChange={handleAgeChange} value={state.age}>
+                <SelectTrigger className="w-full bg-white">
+                  <SelectValue placeholder="Select Age Range" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="0-18">0-18</SelectItem>
+                  <SelectItem value="19-30">19-30</SelectItem>
+                  <SelectItem value="31-50">31-50</SelectItem>
+                  <SelectItem value="51-70">51-70</SelectItem>
+                  <SelectItem value="71+">71+</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-          </div>
-        )}
-        {(state.keypoints.length > 0 || state.diagnosis || state.summary) && (
-          <div className="mb-6">
-            <h3 className="font-bold text-lg sm:text-xl mb-2">
-              Summary and Actions
-            </h3>
-            <div className="bg-white p-4 rounded-lg shadow-sm">
-              {state.keypoints.length > 0 && (
-                <>
-                  <p className="mb-2 text-sm sm:text-base">
-                    <strong>Key Points:</strong>
-                  </p>
-                  <ul className="list-disc pl-5 mb-4 text-sm sm:text-base">
-                    {state.keypoints.map((keypoint, index) => (
+            <div className="flex w-full justify-center gap-4 mt-4">
+              <Button
+                onClick={handleToggleRecording}
+                className={
+                  state.isRecording
+                    ? "bg-[#f27252] hover:bg-[#ea5321] w-[49%]"
+                    : "bg-[#34E796] hover:bg-[#00c36b] w-[49%]"
+                }
+                disabled={state.isSending}
+              >
+                {state.isRecording ? "Stop Recording" : "Start Recording"}
+              </Button>
+              {!state.isRecording && (
+                <Button
+                  onClick={clearResults}
+                  className="bg-[#f27252] hover:bg-[#ea5321] w-[49%]"
+                  disabled={
+                    state.isSending || state.labeledSegments.length === 0
+                  }
+                >
+                  Clear Results
+                </Button>
+              )}
+            </div>
+
+            {state.suggestions.length > 0 && (
+              <div className="mt-8">
+                <h3 className="font-bold mb-2 text-lg sm:text-xl">
+                  Doctor Reply Suggestions
+                </h3>
+                <div className="bg-white p-4 rounded-md shadow-sm">
+                  <ul className="list-disc pl-5">
+                    {state.suggestions.map((suggestion, index) => (
                       <li key={index} className="mb-2">
-                        {formatText(keypoint)}
+                        {formatText(suggestion)}
                       </li>
                     ))}
                   </ul>
-                </>
-              )}
-              {state.diagnosis && (
-                <>
-                  <p className="mb-2 text-sm sm:text-base">
-                    <strong>Diagnosis:</strong>
+                </div>
+              </div>
+            )}
+
+            {state.diagnosis && (
+              <div className="mt-8">
+                <h3 className="font-bold mb-2 text-lg sm:text-xl">Diagnosis</h3>
+                <div className="bg-white p-4 rounded-md shadow-sm">
+                  <p className="mb-2">
+                    <strong>Diagnoses:</strong>
                   </p>
-                  <ul className="list-disc pl-5 mb-4 text-sm sm:text-base">
+                  <ul className="list-disc pl-5 mb-2">
                     {state.diagnosis.diagnoses.map((diag, index) => (
                       <li key={index}>
                         {formatText(diag.diagnosis)} (Likelihood:{" "}
-                        {diag.likelihood}%)
+                        {diag.likelihood}
+                        %)
                       </li>
                     ))}
                   </ul>
-                </>
-              )}
-              {state.summary && (
-                <p className="mb-4 text-sm sm:text-base">
-                  <strong>Patient Summary:</strong>{" "}
-                  {formatText(state.summary.patient_summary)}
-                </p>
-              )}
-              <div className="flex justify-end space-x-4">
-                <Button
-                  onClick={handleAccept}
-                  className="w-full sm:w-auto px-6 py-2 text-sm sm:text-base bg-green-500 hover:bg-green-600"
-                  disabled={state.isSending}
-                >
-                  Accept
-                </Button>
-                <Button
-                  onClick={handleReject}
-                  className="w-full sm:w-auto px-6 py-2 text-sm sm:text-base bg-red-500 hover:bg-red-600"
-                  disabled={state.isSending}
-                >
-                  Reject
-                </Button>
+                  <div className="h-32 sm:h-40">
+                    <Bar data={getChartData()} options={chartOptions} />
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
+
+            {state.summary && (
+              <div className="mb-6">
+                <h3 className="font-bold text-lg sm:text-xl mb-2">
+                  Conversation Summary
+                </h3>
+                <div className="bg-white p-4 rounded-lg shadow-sm">
+                  <p className="mb-2 text-sm sm:text-base">
+                    <strong>Patient Summary:</strong>{" "}
+                    {formatText(state.summary.patient_summary)}
+                  </p>
+                  <p className="mb-2 text-sm sm:text-base">
+                    <strong>Doctor Summary:</strong>{" "}
+                    {formatText(state.summary.doctor_summary)}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {(state.keypoints.length > 0 ||
+              state.diagnosis ||
+              state.summary) && (
+              <div className="mt-8 mb-4">
+                <h3 className="font-bold mb-2 text-lg sm:text-xl">
+                  Summary and Actions
+                </h3>
+                <div className="bg-white p-4 rounded-md shadow-sm">
+                  {state.keypoints.length > 0 && (
+                    <>
+                      <p className="mb-2">
+                        <strong>Key Points:</strong>
+                      </p>
+                      <ul className="list-disc pl-5 mb-4">
+                        {state.keypoints.map((keypoint, index) => (
+                          <li key={index} className="mb-2">
+                            {formatText(keypoint)}
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                  {state.diagnosis && (
+                    <>
+                      <p className="mb-2 text-sm sm:text-base">
+                        <strong>Diagnosis:</strong>
+                      </p>
+                      <ul className="list-disc pl-5 mb-4 text-sm sm:text-base">
+                        {state.diagnosis.diagnoses.map((diag, index) => (
+                          <li key={index}>
+                            {formatText(diag.diagnosis)} (Likelihood:{" "}
+                            {diag.likelihood}%)
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                  {state.summary && (
+                    <p className="mb-4">
+                      <strong>Patient Summary:</strong>{" "}
+                      {formatText(state.summary.patient_summary)}
+                    </p>
+                  )}
+                  <div className="flex justify-end space-x-4">
+                    <Button
+                      onClick={handleAccept}
+                      className="bg-[#34E796] hover:bg-[#00c36b]"
+                      disabled={state.isSending}
+                    >
+                      Validated
+                    </Button>
+                    <Button
+                      onClick={handleReject}
+                      className="bg-[#f27252] hover:bg-[#ea5321]"
+                      disabled={state.isSending}
+                    >
+                      Reject
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+            {state.labeledSegments.length > 0 && (
+              <div className="mb-6">
+                <h3 className="font-bold mb-2 text-lg sm:text-xl">
+                  Labeled Conversation
+                </h3>
+                <div className="bg-white p-4 rounded-lg shadow-sm">
+                  {state.isSending && (
+                    <p className="text-gray-500 text-sm mb-2">
+                      Processing audio chunk...
+                    </p>
+                  )}
+                  {state.labeledSegments.map((segment, index) => (
+                    <p key={index} className="mb-2 text-sm sm:text-base">
+                      <strong>
+                        {segment.speaker.charAt(0).toUpperCase() +
+                          segment.speaker.slice(1)}
+                        :
+                      </strong>{" "}
+                      {formatText(segment.text)}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
-        )}
-        {state.labeledSegments.length > 0 && (
-          <div className="mb-6">
-            <h3 className="font-bold text-lg sm:text-xl mb-2">
-              Labeled Conversation
-            </h3>
-            <div className="bg-white p-4 rounded-lg shadow-sm">
-              {state.isSending && (
-                <p className="text-gray-500 text-sm mb-2">
-                  Processing audio chunk...
+        </Card>
+        {/* Keypoints Sidebar Desktop */}
+        <Card className="hidden sm:block w-4/12 bg-white overflow-y-auto pl-8 max-h-screen">
+          <h3 className="font-semibold mb-4 text-lg">Key Points</h3>
+          {state.keypoints.length > 0 ? (
+            <ul className="list-disc pl-6">
+              {state.keypoints.map((keypoint, index) => (
+                <li key={index} className="mb-2">
+                  {formatText(keypoint)}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-gray-500 text-sm">No key points available.</p>
+          )}
+        </Card>
+        {/* Keypoints Mobile */}
+        <div className="sm:hidden fixed bottom-4 left-4">
+          <Dialog
+            open={isKeypointsOpen}
+            onOpenChange={(open) => setIsKeypointsOpen(open)}
+          >
+            <DialogTrigger asChild>
+              <Button className="bg-blue-500 hover:bg-blue-600 p-3 rounded-full">
+                <Menu className="w-5 h-5" />
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="fixed bottom-0 left-0 right-0 bg-white p-4 rounded-t-lg shadow-lg max-h-[50vh] overflow-y-auto">
+              <h3 className="font-bold mb-2 text-lg">Key Points</h3>
+              {state.keypoints.length > 0 ? (
+                <ul className="list-disc pl-5 text-sm">
+                  {state.keypoints.map((keypoint, index) => (
+                    <li key={index} className="mb-2">
+                      {formatText(keypoint)}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-gray-500 text-sm">
+                  No key points available.
                 </p>
               )}
-              {state.labeledSegments.map((segment, index) => (
-                <p key={index} className="mb-2 text-sm sm:text-base">
-                  <strong>
-                    {segment.speaker.charAt(0).toUpperCase() +
-                      segment.speaker.slice(1)}
-                    :
-                  </strong>{" "}
-                  {formatText(segment.text)}
-                </p>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-      <div className="sm:hidden fixed bottom-4 left-4">
-        <Dialog
-          open={isKeypointsOpen}
-          onOpenChange={(open) => setIsKeypointsOpen(open)}
-        >
-          <DialogTrigger asChild>
-            <Button className="bg-blue-500 hover:bg-blue-600 p-3 rounded-full">
-              <Menu className="w-5 h-5" />
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="fixed bottom-0 left-0 right-0 bg-white p-4 rounded-t-lg shadow-lg max-h-[50vh] overflow-y-auto">
-            <h3 className="font-bold text-lg mb-2">Key Points</h3>
-            {state.keypoints.length > 0 ? (
-              <ul className="list-disc pl-5 text-sm">
-                {state.keypoints.map((keypoint, index) => (
-                  <li key={index} className="mb-2">
-                    {formatText(keypoint)}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-gray-500 text-sm">No key points available.</p>
-            )}
-          </DialogContent>
-        </Dialog>
-      </div>
-      <div className="hidden sm:block w-64 bg-white shadow-lg fixed right-0 top-0 h-full p-4">
-        <h3 className="font-bold text-lg mb-2">Key Points</h3>
-        {state.keypoints.length > 0 ? (
-          <ul className="list-disc pl-5 text-sm">
-            {state.keypoints.map((keypoint, index) => (
-              <li key={index} className="mb-2">
-                {formatText(keypoint)}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-gray-500 text-sm">No key points available.</p>
-        )}
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
     </div>
   );
