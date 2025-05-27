@@ -1,30 +1,28 @@
-import { NextResponse } from "next/server";
-import fs from "fs/promises";
+// app/src/app/api/save-audio/route.ts
+import { NextRequest, NextResponse } from "next/server";
+import fs from "fs";
 import path from "path";
-import { ensureDir } from "fs-extra";
 
-export async function POST(request: Request) {
+export async function POST(req: NextRequest) {
   try {
-    const audioDir = path.join(process.cwd(), "audio");
-    await ensureDir(audioDir);
-
-    const body = await request.json();
-    const { sessionId, audio } = body;
-    if (!sessionId || !audio || !audio.data || !audio.type) {
+    const formData = await req.formData();
+    const audio = formData.get("audio") as File;
+    const sessionId = formData.get("sessionId") as string;
+    if (!audio) {
       return NextResponse.json(
-        { message: "Missing sessionId, audio data, or MIME type" },
+        { message: "No audio file provided" },
         { status: 400 }
       );
     }
-
-    const extension = audio.type.includes("webm") ? "webm" : "wav";
-    const filename = `session-${sessionId}.${extension}`;
+    const audioDir = path.join(process.cwd(), "audio");
+    if (!fs.existsSync(audioDir)) {
+      fs.mkdirSync(audioDir, { recursive: true });
+    }
+    const filename = audio.name;
     const filePath = path.join(audioDir, filename);
-    const buffer = Buffer.from(audio.data, "base64");
-    await fs.writeFile(filePath, buffer);
-
-    console.log(`Saved audio to ${filePath}`);
-    return NextResponse.json({ filename }, { status: 200 });
+    const buffer = Buffer.from(await audio.arrayBuffer());
+    fs.writeFileSync(filePath, buffer);
+    return NextResponse.json({ filename });
   } catch (error) {
     console.error("Save audio error:", error);
     return NextResponse.json(
