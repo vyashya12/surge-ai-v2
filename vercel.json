@@ -1,0 +1,10 @@
+{
+  "functions": {
+    "api/deepgram/transcribe": {
+      "maxDuration": 60
+    },
+    "api/create-combined-v2": {
+      "maxDuration": 60
+    }
+  }
+}

@@ -35,6 +35,33 @@ export interface Diagnosis {
   similarity: number;
 }
 
+export interface DiagnosisValidation {
+  id: string;
+  doctor_id: string;
+  session_id: string;
+  summary_id: string;
+  validation: boolean;
+  patient_summary: string;
+  doctor_summary: string;
+  notes_summary: string;
+  diagnosis: string;
+  diagnosis_probability: number;
+  created_at: string;
+  updated_at: string;
+}
+
+// Define request and response types for getAllDiagnosisValidations
+export interface DiagnosisValidationRequest {
+  // Add fields if the API requires specific data in the POST request
+  // Example: { filter: string } or leave as empty object {}
+}
+
+export interface DiagnosisValidationResponse {
+  diagnoses: DiagnosisValidation[];
+  status: number;
+  message?: string;
+}
+
 export interface Summary {
   id: string;
   session_id: string;

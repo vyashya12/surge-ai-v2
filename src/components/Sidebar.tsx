@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -147,10 +147,14 @@ export const Sidebar = ({
   setIsCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
 }) => {
   const pathname = usePathname();
+  const router = useRouter();
   const { logout } = useAuth();
 
   const toggleCollapse = () => setIsCollapsed((prev) => !prev);
-  const handleLogout = () => logout();
+  const handleLogout = () => {
+    logout(); // Call the logout function from useAuth
+    router.push("/"); // Navigate to the root path
+  };
 
   return (
     <>
