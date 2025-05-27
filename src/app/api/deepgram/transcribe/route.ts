@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate audio size
+    // Validate audio size and type
     if (audioBlob.size < 512) {
       console.error(`Audio blob too small: ${audioBlob.size} bytes`);
       return NextResponse.json(
@@ -52,9 +52,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const mimeType = audioBlob.type || "audio/webm;codecs=opus";
+    const supportedMimeTypes = [
+      "audio/webm;codecs=opus",
+      "audio/webm",
+      "audio/ogg",
+      "audio/mpeg",
+    ];
+    if (!supportedMimeTypes.includes(mimeType)) {
+      console.error(`Unsupported MIME type: ${mimeType}`);
+      return NextResponse.json(
+        { message: `Unsupported audio format: ${mimeType}` },
+        { status: 400 }
+      );
+    }
+
     // Log audio details
     console.log(
-      `Received audio: type=${audioBlob.type}, size=${audioBlob.size} bytes`
+      `Received audio: type=${audioBlob.type}, size=${
+        audioBlob.size
+      } bytes, filename=${formData.get("audio")?.toString()}`
     );
 
     // Convert Blob to Buffer
@@ -67,12 +84,12 @@ export async function POST(request: NextRequest) {
     const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
       audioBuffer,
       {
-        model: "nova-3",
+        model: "nova-2",
         smart_format: true,
         diarize: true,
         punctuate: true,
         utterances: true,
-        mimetype: audioBlob.type || "audio/webm",
+        mimetype: mimeType,
       }
     );
 
@@ -93,13 +110,13 @@ export async function POST(request: NextRequest) {
       console.warn("No words returned from Deepgram");
       return NextResponse.json(
         { message: "No transcription available", data: [] },
-        { status: 400 }
+        { status: 200 }
       );
     }
 
     // Map words to segments with speaker identification
     const segments: Segment[] = [];
-    let currentSpeaker = null;
+    let currentSpeaker: string | null = null;
     let currentText: string[] = [];
 
     for (const wordInfo of alternatives[0].words) {
