@@ -66,11 +66,14 @@ export interface Summary {
   id: string;
   session_id: string;
   doctorsid: string;
-  patient_summary: string;
-  doctor_summary: string;
+  patient: string;
+  doctor: string;
   notes_summary: string;
   diagnosis: string;
   diagnosis_probability: number;
+  physical_evaluation: string;
+  gender: string;
+  age: string;
   created_at: string;
   updated_at: string;
 }

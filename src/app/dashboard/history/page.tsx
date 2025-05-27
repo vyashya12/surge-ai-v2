@@ -222,8 +222,8 @@ export default function HistoryPage() {
                           Convo
                         </Button>
                       </div>
-                      <div>{session.summary?.patient_summary || "-"}</div>
-                      <div>{session.summary?.doctor_summary || "-"}</div>
+                      <div>{session.summary?.patient || "-"}</div>
+                      <div>{session.summary?.doctor || "-"}</div>
                       <div>{formatDate(session.created_at)}</div>
                     </div>
                     <Dialog

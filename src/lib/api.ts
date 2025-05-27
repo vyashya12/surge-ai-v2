@@ -190,20 +190,20 @@ export const getAllDiagnosisValidations =
   };
 
 // Get summary by ID
-export const getSummaryById =
-  (token: string | null) =>
-  async (summaryId: string): Promise<Result<Summary, string>> => {
-    const client = createApiClient(token);
-    const response = await client.get<
-      Summary & { status: number; message?: string }
-    >(`/summary/${summaryId}`);
-    return response.ok && response.value.status === 200
-      ? { ok: true, value: response.value }
-      : {
-          ok: false,
-          error: response.toString() || "Failed to fetch summary",
-        };
-  };
+// export const getSummaryById =
+//   (token: string | null) =>
+//   async (summaryId: string): Promise<Result<Summary, string>> => {
+//     const client = createApiClient(token);
+//     const response = await client.get<
+//       Summary & { status: number; message?: string }
+//     >(`/summary/${summaryId}`);
+//     return response.ok && response.value.status === 200
+//       ? { ok: true, value: response.value }
+//       : {
+//           ok: false,
+//           error: response.toString() || "Failed to fetch summary",
+//         };
+//   };
 
 // Get summary from conversation
 export const getSummaryFromConversation =
@@ -431,7 +431,7 @@ interface CombinedCreateRequest {
   notes_summary: string;
   diagnosis: Array<{ diagnosis: string; likelihood: number }>;
   data_json: {
-    data: ConversationSegment[];
+    data: any[]; // Allow any data, including empty array
     patient_summary: string;
     doctor_summary: string;
     doctor_note_summary: string;
@@ -449,14 +449,14 @@ interface CombinedCreateRequest {
 }
 
 interface CombinedCreateResponse {
-  status: number;
-  message: string;
   session_id: string;
   summary_id: string;
   diagnosis_validation_id: string;
   physical_evaluation: string;
   gender: string;
   age: string;
+  status?: number; // Optional, may appear in errors
+  message?: string; // Optional, may appear in errors
   [key: string]: unknown;
 }
 
@@ -478,6 +478,29 @@ export const createCombined =
       return {
         ok: false,
         error: appError.message || "Failed to create combined record",
+      };
+    }
+  };
+
+// Get summary by ID
+export const getSummaryById =
+  (token: string | null) =>
+  async (summaryId: string): Promise<Result<Summary, string>> => {
+    try {
+      const client = createApiClient(token);
+      const response = await client.get<Summary>(`/api/summary/${summaryId}`);
+      return response.ok
+        ? { ok: true, value: response.value }
+        : {
+            ok: false,
+            error: response.error || "Failed to fetch summary",
+          };
+    } catch (error: unknown) {
+      const appError = error as AppError;
+      console.error("getSummaryById fetch error:", appError);
+      return {
+        ok: false,
+        error: appError.message || "Failed to fetch summary",
       };
     }
   };

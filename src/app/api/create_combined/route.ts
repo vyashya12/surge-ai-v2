@@ -9,7 +9,7 @@ interface CombinedCreateRequest {
   notes_summary: string;
   diagnosis: Array<{ diagnosis: string; likelihood: number }>;
   data_json: {
-    data: Array<{ [key: string]: string }>;
+    data: any[]; // Allow empty array or any data
     patient_summary: string;
     doctor_summary: string;
     doctor_note_summary: string;
@@ -27,14 +27,14 @@ interface CombinedCreateRequest {
 }
 
 interface CombinedCreateResponse {
-  status: number;
-  message: string;
   session_id: string;
   summary_id: string;
   diagnosis_validation_id: string;
   physical_evaluation: string;
   gender: string;
   age: string;
+  status?: number; // Optional, may appear in errors
+  message?: string; // Optional, may appear in errors
   [key: string]: unknown;
 }
 
@@ -129,7 +129,7 @@ export async function POST(request: Request) {
           "Content-Type": "application/json",
           Accept: "application/json",
         },
-        timeout: 20000, // 10s timeout
+        timeout: 20000, // 20s timeout
       }
     );
 
