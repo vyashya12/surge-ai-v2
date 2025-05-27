@@ -13,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useSidebarCollapse } from "@/contexts/sidebarContext";
 
 type PageState = {
   data: DiagnosisValidation[] | null;
@@ -41,14 +42,20 @@ export default function ValidationPage() {
     error: null,
   });
 
+  const { isCollapsed } = useSidebarCollapse();
+
   useEffect(() => {
     loadData(setState)();
   }, []);
 
   return (
-    <div className="container mx-auto p-4">
-      <h1 className="text-3xl font-bold mb-6">Validation</h1>
-      <Card>
+    <div className="bg-gray-50 min-h-screen p-4 sm:p-8">
+      <p className="font-bold text-xl">Validation</p>
+      <Card
+        className={`mt-8 overflow-x-auto ${
+          isCollapsed ? "w-[84rem]" : "w-[70rem]"
+        }`}
+      >
         <CardHeader>
           <CardTitle>Diagnosis Validations</CardTitle>
         </CardHeader>

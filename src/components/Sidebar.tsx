@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -20,6 +19,7 @@ import {
   LogOut,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useSidebarCollapse } from "@/contexts/sidebarContext";
 
 type NavItem = { name: string; href: string; icon: React.ReactNode };
 
@@ -139,21 +139,16 @@ const renderMobileSidebar = (pathname: string, logout: () => void) => (
   </div>
 );
 
-export const Sidebar = ({
-  isCollapsed,
-  setIsCollapsed,
-}: {
-  isCollapsed: boolean;
-  setIsCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
-}) => {
+export const Sidebar = () => {
   const pathname = usePathname();
   const router = useRouter();
   const { logout } = useAuth();
+  const { isCollapsed, setIsCollapsed } = useSidebarCollapse(); // <-- use context
 
-  const toggleCollapse = () => setIsCollapsed((prev) => !prev);
+  const toggleCollapse = () => setIsCollapsed(!isCollapsed);
   const handleLogout = () => {
-    logout(); // Call the logout function from useAuth
-    router.push("/"); // Navigate to the root path
+    logout();
+    router.push("/");
   };
 
   return (

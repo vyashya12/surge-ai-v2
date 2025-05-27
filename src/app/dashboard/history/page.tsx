@@ -133,7 +133,7 @@ export default function HistoryPage() {
   const authData = getAuthData();
 
   return (
-    <div className="space-y-6 p-8">
+    <div className="p-8 bg-gray-50 min-h-screen">
       <style jsx>{`
         .conversation-modal-dark {
           padding: 20px;
@@ -174,8 +174,8 @@ export default function HistoryPage() {
           max-width: 200px;
         }
       `}</style>
-      <h1 className="text-xl font-bold">Session History</h1>
-      <Card>
+      <p className="font-bold text-xl">History</p>
+      <Card className="mt-8">
         <CardHeader>
           <CardTitle>
             🩺 Doctor ID: {authData.ok ? authData.value.user.id : "N/A"}

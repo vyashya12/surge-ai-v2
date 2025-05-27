@@ -3,6 +3,10 @@
 import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { Sidebar } from "@/components/Sidebar";
+import {
+  SidebarCollapseProvider,
+  useSidebarCollapse,
+} from "@/contexts/sidebarContext";
 
 export default function DashboardLayout({
   children,
@@ -10,7 +14,6 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isCollapsed, setIsCollapsed] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
 
@@ -29,16 +32,25 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="flex">
-      <Sidebar isCollapsed={isCollapsed} setIsCollapsed={setIsCollapsed} />
-
-      <div
-        className={`flex-1 transition-all duration-300 ${
-          isCollapsed ? "ml-16" : "ml-[20%]"
-        }`}
-      >
-        {children}
+    <SidebarCollapseProvider>
+      <div className="flex">
+        <Sidebar />
+        <DashboardContent>{children}</DashboardContent>
       </div>
+    </SidebarCollapseProvider>
+  );
+}
+
+function DashboardContent({ children }: { children: React.ReactNode }) {
+  const { isCollapsed } = useSidebarCollapse();
+
+  return (
+    <div
+      className={`flex-1 transition-all duration-300 ${
+        isCollapsed ? "ml-18 sm:ml-16" : "ml-18 sm:ml-[20%]"
+      }`}
+    >
+      {children}
     </div>
   );
 }
