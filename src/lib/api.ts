@@ -431,7 +431,7 @@ interface CombinedCreateRequest {
   notes_summary: string;
   diagnosis: Array<{ diagnosis: string; likelihood: number }>;
   data_json: {
-    data: ConversationSegment[];
+    data: any[]; // Allow any data, including empty array
     patient_summary: string;
     doctor_summary: string;
     doctor_note_summary: string;
@@ -449,14 +449,14 @@ interface CombinedCreateRequest {
 }
 
 interface CombinedCreateResponse {
-  status: number;
-  message: string;
   session_id: string;
   summary_id: string;
   diagnosis_validation_id: string;
   physical_evaluation: string;
   gender: string;
   age: string;
+  status?: number; // Optional, may appear in errors
+  message?: string; // Optional, may appear in errors
   [key: string]: unknown;
 }
 
@@ -468,7 +468,7 @@ export const createCombined =
     try {
       const client = createApiClient(token);
       const response = await client.post<CombinedCreateResponse>(
-        "/create_combined",
+        "/combined-create-v2",
         data
       );
       return response;
