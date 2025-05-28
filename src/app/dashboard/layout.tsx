@@ -2,7 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { Sidebar } from "@/components/Sidebar"; // Import your Sidebar component
+import { Sidebar } from "@/components/Sidebar";
+import {
+  SidebarCollapseProvider,
+  useSidebarCollapse,
+} from "@/contexts/sidebarContext";
 
 export default function DashboardLayout({
   children,
@@ -14,7 +18,7 @@ export default function DashboardLayout({
   const pathname = usePathname();
 
   useEffect(() => {
-    const token = localStorage.getItem("user"); // Consistent with your code
+    const token = localStorage.getItem("user");
     const authStatus = !!token;
     setIsAuthenticated(authStatus);
 
@@ -28,20 +32,25 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-100">
-      {/* Sidebar */}
-      <Sidebar />
-      {/* Main Content */}
-      <main
-        // style={{
-        //   backgroundImage: "url('/bgimage.jpg')",
-        //   width: "100%",
-        //   height: "100%",
-        // }}
-        className="flex-1 lg:ml-64 lg:mr-64 p-4 sm:p-8"
-      >
-        {children}
-      </main>
+    <SidebarCollapseProvider>
+      <div className="flex">
+        <Sidebar />
+        <DashboardContent>{children}</DashboardContent>
+      </div>
+    </SidebarCollapseProvider>
+  );
+}
+
+function DashboardContent({ children }: { children: React.ReactNode }) {
+  const { isCollapsed } = useSidebarCollapse();
+
+  return (
+    <div
+      className={`flex-1 transition-all duration-300 ${
+        isCollapsed ? "ml-18 sm:ml-16" : "ml-18 sm:ml-[20%]"
+      }`}
+    >
+      {children}
     </div>
   );
 }

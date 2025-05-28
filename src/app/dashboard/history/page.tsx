@@ -133,7 +133,7 @@ export default function HistoryPage() {
   const authData = getAuthData();
 
   return (
-    <div className="space-y-6">
+    <div className="p-8 bg-gray-50 min-h-screen">
       <style jsx>{`
         .conversation-modal-dark {
           padding: 20px;
@@ -174,8 +174,8 @@ export default function HistoryPage() {
           max-width: 200px;
         }
       `}</style>
-      <h1 className="text-3xl font-bold">📜 Session History</h1>
-      <Card>
+      <p className="font-bold text-xl">History</p>
+      <Card className="mt-8 h-[35rem]">
         <CardHeader>
           <CardTitle>
             🩺 Doctor ID: {authData.ok ? authData.value.user.id : "N/A"}
@@ -232,11 +232,11 @@ export default function HistoryPage() {
                     >
                       <DialogContent className="conversation-modal-dark">
                         <DialogHeader>
-                          <DialogTitle>🗣️ Conversation Transcript</DialogTitle>
+                          <DialogTitle>Conversation Transcript</DialogTitle>
                         </DialogHeader>
-                        <pre>
+                        <p>
                           {session.conversation || "No transcript available"}
-                        </pre>
+                        </p>
                       </DialogContent>
                     </Dialog>
                     <hr className="my-2" />
