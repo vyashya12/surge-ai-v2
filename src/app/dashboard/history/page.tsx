@@ -103,7 +103,6 @@ export default function HistoryPage() {
       return;
     }
     const { token, user } = authData.value;
-    console.log(token);
     if (!user.id) {
       setState((prev) => ({
         ...prev,
@@ -133,7 +132,7 @@ export default function HistoryPage() {
   const authData = getAuthData();
 
   return (
-    <div className="p-8 bg-gray-50 min-h-screen">
+    <div className="p-4 sm:p-6 lg:p-8 bg-gray-50 min-h-screen">
       <style jsx>{`
         .conversation-modal-dark {
           padding: 20px;
@@ -171,11 +170,12 @@ export default function HistoryPage() {
         }
         .audio-player {
           width: 100%;
-          max-width: 200px;
+          max-width: 400px;
+          min-width: 300px;
         }
       `}</style>
-      <p className="font-bold text-xl">History</p>
-      <Card className="mt-8 h-[35rem]">
+      <p className="font-bold text-xl mb-6">History</p>
+      <Card className="mt-6 w-full max-w-7xl mx-auto min-h-[35rem] h-auto">
         <CardHeader>
           <CardTitle>
             🩺 Doctor ID: {authData.ok ? authData.value.user.id : "N/A"}
@@ -189,7 +189,7 @@ export default function HistoryPage() {
           ) : !state.sessions || state.sessions.length === 0 ? (
             <p>ℹ️ No session history available yet for this doctor.</p>
           ) : (
-            <div>
+            <div className="max-h-[32rem] overflow-y-auto">
               <div className="grid grid-cols-[1.5fr_2fr_2.5fr_2.5fr_1.5fr] gap-4 mb-4">
                 <div className="table-header">Audio</div>
                 <div className="table-header">Conversation</div>

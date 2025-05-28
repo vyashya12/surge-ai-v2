@@ -1,21 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Dispatch, SetStateAction } from "react";
 import { getAllDiagnosisValidations } from "@/lib/api";
-import {
-  Card,
-  CardContent,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getAuthData } from "@/lib/auth";
 import { DiagnosisValidation } from "@/types";
 import {
   Table,
   TableBody,
   TableCell,
-  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -28,6 +21,8 @@ type PageState = {
   loading: boolean;
   error: string | null;
 };
+
+const ITEMS_PER_PAGE = 10;
 
 const loadData =
   (setState: (fn: (prev: PageState) => PageState) => void) => async () => {
@@ -50,19 +45,23 @@ export default function ValidationPage() {
     error: null,
   });
   const [active, setActive] = useState(1);
-
   const { isCollapsed } = useSidebarCollapse();
 
   useEffect(() => {
     loadData(setState)();
   }, []);
 
+  const totalItems = state.data ? state.data.length : 0;
+  const paginatedData = state.data
+    ? state.data.slice((active - 1) * ITEMS_PER_PAGE, active * ITEMS_PER_PAGE)
+    : [];
+
   return (
-    <div className="bg-gray-50 min-h-screen p-4 sm:p-8">
-      <p className="font-bold text-xl">Validation</p>
+    <div className="bg-gray-50 min-h-screen p-4 sm:p-6 lg:p-8">
+      <h1 className="font-bold text-xl mb-6">Validation</h1>
       <Card
-        className={`mt-8 overflow-auto h-[36rem] relative ${
-          isCollapsed ? "w-[84rem]" : "w-[70rem]"
+        className={`mt-6 overflow-auto h-[36rem] relative w-full max-w-7xl mx-auto ${
+          isCollapsed ? "lg:max-w-[90vw]" : "lg:max-w-[80vw]"
         }`}
       >
         <CardHeader>
@@ -73,7 +72,7 @@ export default function ValidationPage() {
             <p>Loading...</p>
           ) : state.error ? (
             <p className="text-red-500">Error: {state.error}</p>
-          ) : state.data && state.data.length > 0 ? (
+          ) : paginatedData.length > 0 ? (
             <Table>
               <TableHeader>
                 <TableRow>
@@ -86,14 +85,24 @@ export default function ValidationPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {[...state.data, ...state.data].slice(active-1, active-1+10).map((diagnosis) => (
+                {paginatedData.map((diagnosis) => (
                   <TableRow key={diagnosis.id}>
-                    <TableCell>{diagnosis.diagnosis}</TableCell>
                     <TableCell>
-                      {diagnosis.diagnosis_probability.toFixed(2)}%
+                      {diagnosis.diagnosis.length > 0
+                        ? diagnosis.diagnosis
+                            .map((d) => d.diagnosis || "N/A")
+                            .join(", ")
+                        : "N/A"}
                     </TableCell>
-                    <TableCell>{diagnosis.patient_summary}</TableCell>
-                    <TableCell>{diagnosis.doctor_summary}</TableCell>
+                    <TableCell>
+                      {diagnosis.diagnosis.length > 0
+                        ? diagnosis.diagnosis
+                            .map((d) => `${(d.likelihood || 0).toFixed(2)}%`)
+                            .join(", ")
+                        : "N/A"}
+                    </TableCell>
+                    <TableCell>{diagnosis.patient_summary || "N/A"}</TableCell>
+                    <TableCell>{diagnosis.doctor_summary || "N/A"}</TableCell>
                     <TableCell>{diagnosis.notes_summary || "N/A"}</TableCell>
                     <TableCell>
                       {new Date(diagnosis.created_at).toLocaleString()}
@@ -106,9 +115,9 @@ export default function ValidationPage() {
             <p>No data available</p>
           )}
         </CardContent>
-          <div className="absolute right-4 bottom-4 mt-4">
-            <DefaultPagination active={active} setActive={setActive} />
-          </div>
+        <div className="absolute right-4 bottom-4 mt-4">
+          <DefaultPagination active={active} setActive={setActive} />
+        </div>
       </Card>
     </div>
   );

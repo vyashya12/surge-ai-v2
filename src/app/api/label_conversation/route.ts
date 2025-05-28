@@ -92,12 +92,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Log request body for debugging
-    console.log(
-      "Label conversation request body:",
-      JSON.stringify(body, null, 2)
-    );
-
     // Make backend API call
     const response = await axios.post<LabelConversationResponse>(
       `${backendUrl}/label-conversation`,
@@ -123,12 +117,6 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
-
-    // Log backend response for debugging
-    console.log(
-      "Backend response data:",
-      JSON.stringify(response.data, null, 2)
-    );
 
     // Merge segments
     const mergedData: LabelConversationResponse = {

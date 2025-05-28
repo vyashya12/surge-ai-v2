@@ -322,12 +322,6 @@ export default function AudioRecorder() {
           audioBlobParam ??
           new Blob(audioChunksRef.current, { type: mimeType });
 
-        console.log("Saving audio locally:", {
-          sessionId: sessionIdRef.current,
-          audioSize: audioBlob.size,
-          mimeType: mimeType,
-        });
-
         const formData = new FormData();
         formData.append("sessionId", sessionIdRef.current);
         formData.append(
@@ -352,7 +346,6 @@ export default function AudioRecorder() {
 
         const { filename } = await response.json();
         audioFilenameRef.current = filename;
-        console.log(`Saved audio to ${filename}`);
       } catch (error) {
         console.error("saveAudioLocally error:", error);
         setState((prev) => ({
@@ -381,9 +374,6 @@ export default function AudioRecorder() {
       setState((prev) => ({ ...prev, isSending: true }));
 
       try {
-        console.log(
-          `Sending audio blob: ${audioBlob.size} bytes, type: ${audioBlob.type}, startTime: ${startTime}`
-        );
         if (audioBlob.size < 512) {
           throw new Error("Audio blob too small, likely corrupted");
         }
@@ -410,14 +400,9 @@ export default function AudioRecorder() {
         }
 
         const data = await response.json();
-        console.log("Deepgram API response:", JSON.stringify(data, null, 2));
         const segments: LabeledSegment[] = data.data || [];
 
         if (segments.length > 0) {
-          console.log(
-            "Segments from Deepgram:",
-            JSON.stringify(segments, null, 2)
-          );
           const labelResult = await labelConversation(token)({
             data: segments,
           });
@@ -429,7 +414,6 @@ export default function AudioRecorder() {
           }
 
           const labeledData = labelResult.value?.data || [];
-          console.log("Labeled data:", JSON.stringify(labeledData, null, 2));
           const formattedConversation = labeledData.map((segment) => ({
             text: segment.text.trim(),
             speaker: segment.speaker,
@@ -479,11 +463,6 @@ export default function AudioRecorder() {
           const keypointsData = keypointsResult.ok
             ? keypointsResult.value?.keypoints || []
             : [];
-
-          console.log(
-            "New diagnosis data:",
-            JSON.stringify(diagnosisData, null, 2)
-          );
 
           setState((prev) => ({
             ...prev,
@@ -610,8 +589,6 @@ export default function AudioRecorder() {
         age: "",
       };
 
-      console.log("Combined Create Payload:", JSON.stringify(payload, null, 2));
-
       if (
         !payload.patient_summary ||
         !payload.doctor_summary ||
@@ -628,11 +605,6 @@ export default function AudioRecorder() {
       }
 
       const sessionResponse = createResult.value;
-      console.log(
-        "Combined record created:",
-        JSON.stringify(sessionResponse, null, 2)
-      );
-
       setState((prev) => ({ ...prev, session: sessionResponse }));
 
       const deleteResponse = await fetch("/api/delete-audio", {
@@ -792,7 +764,6 @@ export default function AudioRecorder() {
   }, []);
 
   const handleAccept = useCallback(async () => {
-    console.log("Accepted");
     const success = await uploadAudioToS3();
     if (success) {
       clearResults();
@@ -800,7 +771,6 @@ export default function AudioRecorder() {
   }, [uploadAudioToS3, clearResults]);
 
   const handleReject = useCallback(async () => {
-    console.log("Rejected");
     const success = await uploadAudioToS3();
     if (success) {
       clearResults();
@@ -829,9 +799,7 @@ export default function AudioRecorder() {
       <p className="font-bold text-xl">Home</p>
       <div className="mt-8 flex gap-4">
         <Card className="w-full sm:w-8/12 p-8 ">
-        <CardTitle>
-Start a New Consultation
-        </CardTitle>
+          <CardTitle>Start a New Consultation</CardTitle>
           <div>
             {state.error && (
               <div className="mb-4 p-4 bg-red-100 text-red-700 rounded-md">

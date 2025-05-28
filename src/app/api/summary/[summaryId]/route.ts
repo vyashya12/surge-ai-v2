@@ -3,14 +3,15 @@ import axios from "axios";
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { summaryId: string } }
+  context: { params: Promise<{ summaryId: string }> }
 ) {
   try {
+    const params = await context.params; // Await params to resolve the Promise
     const { summaryId } = params;
     const token = req.headers.get("Authorization");
 
     const response = await axios.get(
-      `http://13.215.163.56/summary/${summaryId}`,
+      `http://13.215.163.56/summary-v2/${summaryId}`,
       {
         headers: {
           ...(token ? { Authorization: token } : {}),
@@ -19,15 +20,14 @@ export async function GET(
         },
       }
     );
-    console.log("Summary response:", response.data);
     return NextResponse.json(response.data, { status: response.status });
   } catch (error: any) {
-    console.error("Error fetching summary:", error);
     if (axios.isAxiosError(error)) {
       const message = error.response?.data?.message || error.message;
       const status = error.response?.status || 500;
       return NextResponse.json({ error: message }, { status });
     }
+    console.error("Unexpected error:", error);
     return NextResponse.json(
       { error: "Failed to fetch summary" },
       { status: 500 }

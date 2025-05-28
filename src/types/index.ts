@@ -41,11 +41,11 @@ export interface DiagnosisValidation {
   session_id: string;
   summary_id: string;
   validation: boolean;
-  patient_summary: string;
-  doctor_summary: string;
-  notes_summary: string;
-  diagnosis: string;
-  diagnosis_probability: number;
+  patient_summary?: string;
+  doctor_summary?: string;
+  notes_summary?: string | null;
+  diagnosis: Array<{ diagnosis?: string; likelihood?: number }>;
+  data_json?: Record<string, any>;
   created_at: string;
   updated_at: string;
 }
@@ -58,7 +58,7 @@ export interface DiagnosisValidationRequest {
 
 export interface DiagnosisValidationResponse {
   diagnoses: DiagnosisValidation[];
-  status: number;
+  status?: string | number;
   message?: string;
 }
 

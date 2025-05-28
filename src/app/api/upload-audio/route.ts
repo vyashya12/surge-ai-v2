@@ -62,8 +62,6 @@ export async function POST(request: NextRequest) {
     // Construct S3 URL
     const audioUrl = `https://${uploadParams.Bucket}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileKey}`;
 
-    console.log(`Successfully uploaded audio to S3: ${audioUrl}`);
-
     return NextResponse.json(
       { message: "File uploaded successfully", audio_url: audioUrl },
       { status: 200 }

@@ -488,7 +488,7 @@ export const getSummaryById =
   async (summaryId: string): Promise<Result<Summary, string>> => {
     try {
       const client = createApiClient(token);
-      const response = await client.get<Summary>(`/api/summary/${summaryId}`);
+      const response = await client.get<Summary>(`/summary/${summaryId}`);
       return response.ok
         ? { ok: true, value: response.value }
         : {

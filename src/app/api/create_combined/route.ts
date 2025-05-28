@@ -50,8 +50,6 @@ export async function POST(request: Request) {
     }
 
     const body: CombinedCreateRequest = await request.json();
-    console.log("Combined Create Request Body:", JSON.stringify(body, null, 2));
-
     // Validate required fields
     if (
       !body.session_id ||
@@ -133,10 +131,6 @@ export async function POST(request: Request) {
       }
     );
 
-    console.log(
-      "Combined Create Response:",
-      JSON.stringify(response.data, null, 2)
-    );
     return NextResponse.json(response.data, { status: response.status });
   } catch (error) {
     if (axios.isAxiosError(error) && error.response) {

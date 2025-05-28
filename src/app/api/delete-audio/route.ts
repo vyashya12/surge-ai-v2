@@ -15,7 +15,6 @@ export async function POST(request: Request) {
 
     const filePath = path.join(process.cwd(), "audio", filename);
     await fs.unlink(filePath);
-    console.log(`Deleted audio file: ${filePath}`);
 
     return NextResponse.json({ message: "File deleted" }, { status: 200 });
   } catch (error) {

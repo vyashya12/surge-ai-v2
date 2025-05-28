@@ -36,8 +36,6 @@ export async function POST(request: Request) {
       },
     });
 
-    console.log(response);
-
     return NextResponse.json(response.data, { status: response.status });
   } catch (error) {
     if (axios.isAxiosError(error) && error.response) {

@@ -67,13 +67,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Log audio details
-    console.log(
-      `Received audio: type=${audioBlob.type}, size=${
-        audioBlob.size
-      } bytes, filename=${formData.get("audio")?.toString()}`
-    );
-
     // Convert Blob to Buffer
     const audioBuffer = Buffer.from(await audioBlob.arrayBuffer());
 
@@ -100,9 +93,6 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-
-    // Log raw Deepgram response
-    console.log("Deepgram response:", JSON.stringify(result, null, 2));
 
     // Extract transcription
     const alternatives = result?.results?.channels?.[0]?.alternatives || [];
@@ -143,9 +133,6 @@ export async function POST(request: NextRequest) {
         speaker: currentSpeaker!,
       });
     }
-
-    // Log segments
-    console.log("Processed segments:", JSON.stringify(segments, null, 2));
 
     return NextResponse.json({ data: segments }, { status: 200 });
   } catch (error) {

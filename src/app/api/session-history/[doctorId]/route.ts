@@ -3,9 +3,10 @@ import axios from "axios";
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { doctorId: string } }
+  context: { params: Promise<{ doctorId: string }> }
 ) {
   try {
+    const params = await context.params;
     const token = req.headers.get("Authorization");
     const { doctorId } = params;
 
@@ -19,7 +20,6 @@ export async function GET(
         },
       }
     );
-    console.log("Session history response:", response.data);
     return NextResponse.json(response.data, { status: response.status });
   } catch (error: any) {
     console.error("Error fetching session history:", error);

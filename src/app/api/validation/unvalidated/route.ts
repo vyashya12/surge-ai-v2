@@ -6,7 +6,7 @@ export async function GET(req: NextRequest) {
     const token = req.headers.get("Authorization");
 
     const response = await axios.get(
-      "http://13.215.163.56/diagnosis-validation/unvalidated",
+      "http://13.215.163.56/diagnosis-validation-v2/unvalidated",
       {
         headers: {
           ...(token ? { Authorization: token } : {}),
@@ -14,7 +14,6 @@ export async function GET(req: NextRequest) {
         },
       }
     );
-    console.log("Diagnosis validation response:", response.data);
     return NextResponse.json(response.data, { status: response.status });
   } catch (error: any) {
     console.error("Error fetching diagnosis validations:", error);
