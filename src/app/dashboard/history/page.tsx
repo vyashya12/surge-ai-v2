@@ -190,7 +190,7 @@ export default function HistoryPage() {
             <p>ℹ️ No session history available yet for this doctor.</p>
           ) : (
             <div className="max-h-[32rem] overflow-y-auto">
-              <div className="grid grid-cols-[1.5fr_2fr_2.5fr_2.5fr_1.5fr] gap-4 mb-4">
+              <div className="grid grid-cols-[3.5fr_1fr_3fr_2fr_1.5fr] gap-4 mb-4">
                 <div className="table-header">Audio</div>
                 <div className="table-header">Conversation</div>
                 <div className="table-header">Patient Summary</div>
@@ -200,7 +200,7 @@ export default function HistoryPage() {
               {state.sessions.map(
                 (session: SessionWithSummary, index: number) => (
                   <div key={session.id}>
-                    <div className="grid grid-cols-[1.5fr_2fr_2.5fr_2.5fr_1.5fr] gap-4 items-center py-2">
+                    <div className="grid grid-cols-[3.5fr_1fr_3fr_2fr_1.5fr] gap-4 items-center py-2">
                       <div>
                         {session.audio_url ? (
                           <audio
