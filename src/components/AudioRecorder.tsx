@@ -4,6 +4,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -69,40 +70,70 @@ interface Summary {
 interface Diagnosis {
   diagnoses: Array<{ diagnosis: string; likelihood: number }>;
   symptoms: string[];
-  source: string;
-  similarity: number;
+  source?: string;
+  similarity?: number;
+  doctors_notes?: string;
+  gender?: string;
+  age?: string;
+  vitals?: {
+    blood_pressure?: string;
+    heart_rate_bpm?: string;
+    respiratory_rate_bpm?: string;
+    spo2_percent?: string;
+    pain_score?: number;
+    weight_kg?: number;
+    height_cm?: number;
+    temperature_celsius?: number;
+  };
 }
 
 interface CombinedCreateRequest {
-  session_id: string;
-  doctor_id: string;
-  patient_summary: string;
-  doctor_summary: string;
-  notes_summary: string;
+  session_id?: string;
+  doctor_id?: string;
+  patient_summary?: string;
+  doctor_summary?: string;
+  notes_summary?: string;
   diagnosis: Array<{ diagnosis: string; likelihood: number }>;
-  data_json: {
-    data: Array<{ [speaker: string]: string }>;
-    patient_summary: string;
-    doctor_summary: string;
-    doctor_note_summary: string;
-    diagnoses: Array<{ diagnosis: string; likelihood: number }>;
-    symptoms: string[];
-    physical_evaluation: string;
-    gender: string;
-    age: string;
+  data_json?: {
+    data?: Array<{ [speaker: string]: string }>;
+    patient_summary?: string;
+    doctor_summary?: string;
+    doctor_note_summary?: string;
+    diagnoses?: Array<{ diagnosis: string; likelihood: number }>;
+    symptoms?: string[];
+    gender?: string;
+    age?: string;
+    vitals?: {
+      blood_pressure?: string;
+      heart_rate_bpm?: string;
+      respiratory_rate_bpm?: string;
+      spo2_percent?: string;
+      pain_score?: number;
+      weight_kg?: number;
+      height_cm?: number;
+      temperature_celsius?: number;
+    };
   };
-  audio_url: string;
+  audio_url?: string;
   conversation: string;
-  physical_evaluation: string;
-  gender: string;
-  age: string;
+  gender?: string;
+  age?: string;
+  vitals?: {
+    blood_pressure?: string;
+    heart_rate_bpm?: string;
+    respiratory_rate_bpm?: string;
+    spo2_percent?: string;
+    pain_score?: number;
+    weight_kg?: number;
+    height_cm?: number;
+    temperature_celsius?: number;
+  };
 }
 
 interface CombinedCreateResponse {
   session_id: string;
   summary_id: string;
   diagnosis_validation_id: string;
-  physical_evaluation: string;
   gender: string;
   age: string;
   status?: number;
@@ -119,10 +150,19 @@ type RecorderState = {
   error: string | null;
   isSending: boolean;
   doctorsNotes: string;
-  physicalEvaluation: string;
   gender: string;
   age: string;
   session?: CombinedCreateResponse;
+  vitals: {
+    blood_pressure?: string;
+    heart_rate_bpm?: string;
+    respiratory_rate_bpm?: string;
+    spo2_percent?: string;
+    pain_score?: number;
+    weight_kg?: number;
+    height_cm?: number;
+    temperature_celsius?: number;
+  };
 };
 
 export default function AudioRecorder() {
@@ -136,10 +176,10 @@ export default function AudioRecorder() {
     error: null,
     isSending: false,
     doctorsNotes: "",
-    physicalEvaluation: "",
     gender: "",
     age: "",
     session: undefined,
+    vitals: {},
   });
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(
     null
@@ -153,22 +193,22 @@ export default function AudioRecorder() {
   const audioFilenameRef = useRef<string | null>(null);
   const isSendingLockRef = useRef<boolean>(false);
   const doctorsNotesRef = useRef(state.doctorsNotes);
-  const physicalEvaluationRef = useRef(state.physicalEvaluation);
   const genderRef = useRef(state.gender);
   const ageRef = useRef(state.age);
+  const vitalsRef = useRef(state.vitals);
 
   useEffect(() => {
     doctorsNotesRef.current = state.doctorsNotes;
   }, [state.doctorsNotes]);
-  useEffect(() => {
-    physicalEvaluationRef.current = state.physicalEvaluation;
-  }, [state.physicalEvaluation]);
   useEffect(() => {
     genderRef.current = state.gender;
   }, [state.gender]);
   useEffect(() => {
     ageRef.current = state.age;
   }, [state.age]);
+  useEffect(() => {
+    vitalsRef.current = state.vitals;
+  }, [state.vitals]);
 
   // Get token and doctor_id from localStorage
   let token: string | null = null;
@@ -225,18 +265,34 @@ export default function AudioRecorder() {
     setState((prev) => ({ ...prev, doctorsNotes: e.target.value }));
   };
 
-  const handlePhysicalEvaluationChange = (
-    e: React.ChangeEvent<HTMLTextAreaElement>
-  ) => {
-    setState((prev) => ({ ...prev, physicalEvaluation: e.target.value }));
-  };
-
   const handleGenderChange = (value: string) => {
     setState((prev) => ({ ...prev, gender: value }));
   };
 
-  const handleAgeChange = (value: string) => {
-    setState((prev) => ({ ...prev, age: value }));
+  const handleAgeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setState((prev) => ({ ...prev, age: e.target.value }));
+  };
+
+  const handleVitalsChange = (
+    e: React.ChangeEvent<HTMLInputElement>,
+    field: keyof NonNullable<RecorderState["vitals"]>
+  ) => {
+    const value = e.target.value;
+    setState((prev) => ({
+      ...prev,
+      vitals: {
+        ...prev.vitals,
+        [field]:
+          field === "pain_score" ||
+          field === "weight_kg" ||
+          field === "height_cm" ||
+          field === "temperature_celsius"
+            ? value
+              ? parseFloat(value)
+              : undefined
+            : value || undefined,
+      },
+    }));
   };
 
   // Chart.js data for diagnosis bar
@@ -365,11 +421,12 @@ export default function AudioRecorder() {
       audioBlob: Blob,
       startTime: number,
       doctorsNotes: string,
-      physicalEvaluation: string,
       gender: string,
-      age: string
+      age: string,
+      vitals: RecorderState["vitals"]
     ) => {
-      if (!isHydrated || isSendingLockRef.current) return;
+      if (!isHydrated || (isSendingLockRef.current && state.isRecording))
+        return;
       isSendingLockRef.current = true;
       setState((prev) => ({ ...prev, isSending: true }));
 
@@ -439,25 +496,29 @@ export default function AudioRecorder() {
 
           const diagnosisRequest = {
             conversation_input: conversationData,
-            doctors_notes: doctorsNotes,
-            physical_evaluation: physicalEvaluation,
-            gender: gender,
-            age: age,
+            doctors_notes: doctorsNotes || undefined,
+            gender: gender || undefined,
+            age: age || undefined,
+            vitals: Object.keys(vitals).length > 0 ? vitals : undefined,
             threshold: 0.7,
           };
           const diagnosisResult = await getDiagnosis(token)(diagnosisRequest);
-          const diagnosisData = diagnosisResult.ok
+          const diagnosisData: Diagnosis = diagnosisResult.ok
             ? diagnosisResult.value
             : {
                 diagnoses: [{ diagnosis: "Unknown", likelihood: 0 }],
                 symptoms: [],
                 source: "fallback",
                 similarity: 0,
+                doctors_notes: doctorsNotes || undefined,
+                gender: gender || undefined,
+                age: age || undefined,
+                vitals: Object.keys(vitals).length > 0 ? vitals : undefined,
               };
 
           const keypointsRequest = {
             conversation_input: conversationData,
-            doctors_notes: state.doctorsNotes,
+            doctors_notes: doctorsNotes,
           };
           const keypointsResult = await getKeypoints(token)(keypointsRequest);
           const keypointsData = keypointsResult.ok
@@ -466,11 +527,11 @@ export default function AudioRecorder() {
 
           setState((prev) => ({
             ...prev,
-            labeledSegments: formattedConversation, // replace entire transcript
-            suggestions: suggestionsData, // replace with latest
-            summary: summaryData, // replace with latest
-            diagnosis: diagnosisData, // replace with latest
-            keypoints: keypointsData, // replace with latest
+            labeledSegments: formattedConversation,
+            suggestions: suggestionsData,
+            summary: summaryData,
+            diagnosis: diagnosisData,
+            keypoints: keypointsData,
             error: null,
             isSending: false,
           }));
@@ -498,10 +559,11 @@ export default function AudioRecorder() {
     [
       isHydrated,
       token,
+      state.isRecording,
       state.doctorsNotes,
-      state.physicalEvaluation,
       state.gender,
       state.age,
+      state.vitals,
     ]
   );
 
@@ -564,38 +626,31 @@ export default function AudioRecorder() {
         .join("\n");
       const payload: CombinedCreateRequest = {
         session_id: sessionIdRef.current,
-        doctor_id: doctorId!,
-        patient_summary: state.summary?.patient_summary || "",
-        doctor_summary: state.summary?.doctor_summary || "",
-        notes_summary: state.doctorsNotes || "",
+        doctor_id: doctorId || undefined,
+        patient_summary: state.summary?.patient_summary,
+        doctor_summary: state.summary?.doctor_summary,
+        notes_summary: state.doctorsNotes,
         diagnosis: state.diagnosis?.diagnoses || [],
         data_json: {
           data: state.labeledSegments.map((segment) => ({
             [segment.speaker]: segment.text,
           })),
-          patient_summary: state.summary?.patient_summary || "",
-          doctor_summary: state.summary?.doctor_summary || "",
-          doctor_note_summary: state.doctorsNotes || "",
-          diagnoses: state.diagnosis?.diagnoses || [],
-          symptoms: state.diagnosis?.symptoms || [],
-          physical_evaluation: state.physicalEvaluation || "",
-          gender: state.gender || "",
-          age: state.age || "",
+          patient_summary: state.summary?.patient_summary,
+          doctor_summary: state.summary?.doctor_summary,
+          doctor_note_summary: state.doctorsNotes,
+          diagnoses: state.diagnosis?.diagnoses,
+          symptoms: state.diagnosis?.symptoms,
+          gender: state.gender,
+          age: state.age,
+          vitals:
+            Object.keys(state.vitals).length > 0 ? state.vitals : undefined,
         },
         audio_url: audioUrl,
         conversation: conversationText,
-        physical_evaluation: state.physicalEvaluation || "",
-        gender: state.gender || "",
-        age: "",
+        gender: state.gender,
+        age: state.age,
+        vitals: Object.keys(state.vitals).length > 0 ? state.vitals : undefined,
       };
-
-      if (
-        !payload.patient_summary ||
-        !payload.doctor_summary ||
-        !payload.conversation
-      ) {
-        throw new Error("Missing required summary or conversation data");
-      }
 
       const createResult = await createCombined(token)(payload);
       if (!createResult.ok) {
@@ -605,8 +660,6 @@ export default function AudioRecorder() {
       }
 
       const sessionResponse = createResult.value;
-      setState((prev) => ({ ...prev, session: sessionResponse }));
-
       const deleteResponse = await fetch("/api/delete-audio", {
         method: "POST",
         headers: {
@@ -657,26 +710,23 @@ export default function AudioRecorder() {
       const mimeType = getSupportedMimeType();
       const recorder = new MediaRecorder(stream, { mimeType });
 
-      const saveChunks: Blob[] = [];
-
       recorder.ondataavailable = async (event) => {
         if (!event.data.size) return;
         audioChunksRef.current.push(event.data);
 
-        // grab the *current* UI inputs
         const doctorsNotes = doctorsNotesRef.current;
-        const physicalEvaluation = physicalEvaluationRef.current;
         const gender = genderRef.current;
         const age = ageRef.current;
+        const vitals = vitalsRef.current;
         if (!initSegment) {
           initSegment = event.data;
           await sendAudio(
             initSegment,
             Date.now(),
             doctorsNotes,
-            physicalEvaluation,
             gender,
-            age
+            age,
+            vitals
           );
         } else {
           const stitched = new Blob(audioChunksRef.current, { type: mimeType });
@@ -684,40 +734,22 @@ export default function AudioRecorder() {
             stitched,
             Date.now(),
             doctorsNotes,
-            physicalEvaluation,
             gender,
-            age
+            age,
+            vitals
           );
         }
       };
 
-      recorder.onstop = async () => {
+      recorder.onstop = () => {
         stream.getTracks().forEach((t) => t.stop());
-        const fullBlob = new Blob(audioChunksRef.current, { type: mimeType });
-
-        // again, pull the very latest inputs
-        const doctorsNotes = doctorsNotesRef.current;
-        const physicalEvaluation = physicalEvaluationRef.current;
-        const gender = genderRef.current;
-        const age = ageRef.current;
-        await sendAudio(
-          fullBlob,
-          0,
-          doctorsNotes,
-          physicalEvaluation,
-          gender,
-          age
-        );
-
-        await saveAudioLocally(fullBlob);
       };
 
-      recorder.start(10_000); // slice into 10s chunks
+      recorder.start(10_000);
       setMediaRecorder(recorder);
       setState((s) => ({
         ...s,
         isRecording: true,
-        // clear out old results so UI always shows the fresh ones
         suggestions: [],
         summary: null,
         diagnosis: null,
@@ -733,13 +765,28 @@ export default function AudioRecorder() {
     }
   }, [isHydrated, sendAudio]);
 
-  const stopRecording = useCallback(() => {
-    if (mediaRecorder) {
+  const stopRecording = useCallback(async () => {
+    if (mediaRecorder && mediaRecorder.state !== "inactive") {
       mediaRecorder.stop();
       setMediaRecorder(null);
-      setState((s) => ({ ...s, isRecording: false, isSending: false }));
+      setState((prev) => ({ ...prev, isRecording: false }));
+
+      // Trigger final sendAudio with accumulated chunks
+      if (audioChunksRef.current.length > 0) {
+        const mimeType = mediaRecorder.mimeType || getSupportedMimeType();
+        const finalBlob = new Blob(audioChunksRef.current, { type: mimeType });
+        const doctorsNotes = doctorsNotesRef.current;
+        const gender = genderRef.current;
+        const age = ageRef.current;
+        const vitals = vitalsRef.current;
+
+        await sendAudio(finalBlob, 0, doctorsNotes, gender, age, vitals);
+        await saveAudioLocally(finalBlob);
+      }
+
+      setState((prev) => ({ ...prev, isSending: false }));
     }
-  }, [mediaRecorder]);
+  }, [mediaRecorder, sendAudio, saveAudioLocally]);
 
   const clearResults = useCallback(() => {
     setState((prev) => ({
@@ -751,10 +798,11 @@ export default function AudioRecorder() {
       keypoints: [],
       error: null,
       doctorsNotes: "",
-      physicalEvaluation: "",
       gender: "",
       age: "",
       session: undefined,
+      vitals: {},
+      threshold: 0.7,
     }));
     sessionIdRef.current = uuidv4();
     audioChunksRef.current = [];
@@ -816,14 +864,7 @@ export default function AudioRecorder() {
                 rows={6}
                 value={state.doctorsNotes}
                 onChange={handleDoctorsNotesChange}
-                placeholder="Enter doctor's notes here..."
-                className="w-full p-4 border rounded-md bg-white"
-              />
-              <Textarea
-                rows={6}
-                value={state.physicalEvaluation}
-                onChange={handlePhysicalEvaluationChange}
-                placeholder="Enter physical evaluation (e.g., blood pressure, heart rate)..."
+                placeholder="Enter doctor's notes here (optional)..."
                 className="w-full p-4 border rounded-md bg-white"
               />
             </div>
@@ -834,22 +875,85 @@ export default function AudioRecorder() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="male">Male</SelectItem>
-                  <SelectItem value="female">Female</SelectItem>{" "}
+                  <SelectItem value="female">Female</SelectItem>
                   <SelectItem value="undisclosed">Undisclosed</SelectItem>
                 </SelectContent>
               </Select>
-              <Select onValueChange={handleAgeChange} value={state.age}>
-                <SelectTrigger className="w-full bg-white">
-                  <SelectValue placeholder="Select Age Range" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="0-18">0-18</SelectItem>
-                  <SelectItem value="19-30">19-30</SelectItem>
-                  <SelectItem value="31-50">31-50</SelectItem>
-                  <SelectItem value="51-70">51-70</SelectItem>
-                  <SelectItem value="71+">71+</SelectItem>
-                </SelectContent>
-              </Select>
+              <Input
+                type="number"
+                value={state.age ?? ""}
+                onChange={handleAgeChange}
+                placeholder="Age"
+                className="w-full bg-white"
+              />
+            </div>
+            <div className="mt-4">
+              <h3 className="font-semibold mb-2 text-base sm:text-lg">
+                Vitals (Optional)
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Input
+                  type="text"
+                  value={state.vitals?.blood_pressure || ""}
+                  onChange={(e) => handleVitalsChange(e, "blood_pressure")}
+                  placeholder="Blood Pressure (e.g., 120/80)"
+                  className="w-full bg-white"
+                />
+                <Input
+                  type="text"
+                  value={state.vitals?.heart_rate_bpm || ""}
+                  onChange={(e) => handleVitalsChange(e, "heart_rate_bpm")}
+                  placeholder="Heart Rate (bpm, e.g., 60-100)"
+                  className="w-full bg-white"
+                />
+                <Input
+                  type="text"
+                  value={state.vitals?.respiratory_rate_bpm || ""}
+                  onChange={(e) =>
+                    handleVitalsChange(e, "respiratory_rate_bpm")
+                  }
+                  placeholder="Respiratory Rate (bpm, e.g., 12-20)"
+                  className="w-full bg-white"
+                />
+                <Input
+                  type="text"
+                  value={state.vitals?.spo2_percent || ""}
+                  onChange={(e) => handleVitalsChange(e, "spo2_percent")}
+                  placeholder="SpO2 (%)"
+                  className="w-full bg-white"
+                />
+                <Input
+                  type="number"
+                  value={state.vitals?.pain_score ?? ""}
+                  onChange={(e) => handleVitalsChange(e, "pain_score")}
+                  placeholder="Pain Score (0-10)"
+                  min={0}
+                  max={10}
+                  className="w-full bg-white"
+                />
+                <Input
+                  type="number"
+                  value={state.vitals?.weight_kg ?? ""}
+                  onChange={(e) => handleVitalsChange(e, "weight_kg")}
+                  placeholder="Weight (kg)"
+                  className="w-full bg-white"
+                />
+                <Input
+                  type="number"
+                  value={state.vitals?.height_cm ?? ""}
+                  onChange={(e) => handleVitalsChange(e, "height_cm")}
+                  placeholder="Height (cm)"
+                  className="w-full bg-white"
+                />
+                <Input
+                  type="number"
+                  value={state.vitals?.temperature_celsius ?? ""}
+                  onChange={(e) => handleVitalsChange(e, "temperature_celsius")}
+                  placeholder="Temperature (°C)"
+                  step="0.1"
+                  className="w-full bg-white"
+                />
+              </div>
             </div>
             <div className="flex w-full justify-center gap-4 mt-4">
               <Button
@@ -859,7 +963,7 @@ export default function AudioRecorder() {
                     ? "bg-[#f27252] hover:bg-[#ea5321] w-[49%]"
                     : "bg-[#34E796] hover:bg-[#00c36b] w-[49%]"
                 }
-                disabled={state.isSending}
+                disabled={state.isRecording && isSendingLockRef.current}
               >
                 {state.isRecording ? "Stop Recording" : "Start Recording"}
               </Button>
@@ -983,7 +1087,7 @@ export default function AudioRecorder() {
                       className="bg-[#34E796] hover:bg-[#00c36b]"
                       disabled={state.isSending}
                     >
-                      Validated
+                      Valid
                     </Button>
                     <Button
                       onClick={handleReject}

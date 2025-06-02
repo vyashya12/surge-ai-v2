@@ -259,12 +259,22 @@ export const getSuggestions =
 
 // Suggest diagnoses
 interface DiagnosesRequest {
-  conversation_input: { data: ConversationSegment[] };
-  doctors_notes: string;
-  threshold: number;
-  physical_evaluation: string;
-  gender: string;
-  age: string;
+  conversation_input: {
+    data: Array<{ [speaker: string]: string }>;
+  };
+  doctors_notes: string | undefined;
+  gender: string | undefined;
+  age: string | undefined;
+  vitals: {
+    blood_pressure: string | undefined;
+    heart_rate_bpm: string | undefined;
+    respiratory_rate_bpm: string | undefined;
+    spo2_percent: string | undefined;
+    pain_score: number | undefined;
+    weight_kg: number | undefined;
+    height_cm: number | undefined;
+    temperature_celsius: number | undefined;
+  };
 }
 
 export const suggestDiagnoses =
@@ -349,23 +359,43 @@ export const getSummary =
 
 // Get diagnosis
 interface DiagnosisRequest {
-  conversation_input: { data: ConversationSegment[] };
-  doctors_notes: string;
-  threshold: number;
-  physical_evaluation: string;
-  gender: string;
-  age: string;
+  conversation_input: {
+    data: Array<{ [speaker: string]: string }>;
+  };
+  doctors_notes?: string;
+  threshold?: number;
+  gender?: string;
+  age?: string;
+  vitals?: {
+    blood_pressure?: string;
+    heart_rate_bpm?: string;
+    respiratory_rate_bpm?: string;
+    spo2_percent?: string;
+    pain_score?: number;
+    weight_kg?: number;
+    height_cm?: number;
+    temperature_celsius?: number;
+  };
 }
 
 interface DiagnosisResponse {
-  diagnoses: { diagnosis: string; likelihood: number }[];
+  diagnoses: Array<{ diagnosis: string; likelihood: number }>;
   symptoms: string[];
-  source: string;
-  similarity: number;
+  source?: string;
+  similarity?: number;
   doctors_notes?: string;
-  physical_evaluation?: string;
   gender?: string;
   age?: string;
+  vitals?: {
+    blood_pressure?: string;
+    heart_rate_bpm?: string;
+    respiratory_rate_bpm?: string;
+    spo2_percent?: string;
+    pain_score?: number;
+    weight_kg?: number;
+    height_cm?: number;
+    temperature_celsius?: number;
+  };
 }
 
 export const getDiagnosis =
@@ -424,39 +454,66 @@ export const getKeypoints =
 
 // Create combined record
 interface CombinedCreateRequest {
-  session_id: string;
-  doctor_id: string;
-  patient_summary: string;
-  doctor_summary: string;
-  notes_summary: string;
+  session_id?: string;
+  doctor_id?: string;
+  patient_summary?: string;
+  doctor_summary?: string;
+  notes_summary?: string;
   diagnosis: Array<{ diagnosis: string; likelihood: number }>;
-  data_json: {
-    data: any[]; // Allow any data, including empty array
-    patient_summary: string;
-    doctor_summary: string;
-    doctor_note_summary: string;
-    diagnoses: Array<{ diagnosis: string; likelihood: number }>;
-    symptoms: string[];
-    physical_evaluation: string;
-    gender: string;
-    age: string;
+  data_json?: {
+    data?: any[];
+    patient_summary?: string;
+    doctor_summary?: string;
+    doctor_note_summary?: string;
+    diagnoses?: Array<{ diagnosis: string; likelihood: number }>;
+    symptoms?: string[];
+    gender?: string;
+    age?: string;
+    vitals?: {
+      blood_pressure?: string;
+      heart_rate_bpm?: string;
+      respiratory_rate_bpm?: string;
+      spo2_percent?: string;
+      pain_score?: number;
+      weight_kg?: number;
+      height_cm?: number;
+      temperature_celsius?: number;
+    };
   };
-  audio_url: string;
+  audio_url?: string;
   conversation: string;
-  physical_evaluation: string;
-  gender: string;
-  age: string;
+  gender?: string;
+  age?: string;
+  vitals?: {
+    blood_pressure?: string;
+    heart_rate_bpm?: string;
+    respiratory_rate_bpm?: string;
+    spo2_percent?: string;
+    pain_score?: number;
+    weight_kg?: number;
+    height_cm?: number;
+    temperature_celsius?: number;
+  };
 }
 
 interface CombinedCreateResponse {
-  session_id: string;
-  summary_id: string;
-  diagnosis_validation_id: string;
-  physical_evaluation: string;
-  gender: string;
-  age: string;
-  status?: number; // Optional, may appear in errors
-  message?: string; // Optional, may appear in errors
+  session_id?: string;
+  summary_id?: string;
+  diagnosis_validation_id?: string;
+  gender?: string;
+  age?: string;
+  vitals?: {
+    blood_pressure?: string;
+    heart_rate_bpm?: string;
+    respiratory_rate_bpm?: string;
+    spo2_percent?: string;
+    pain_score?: number;
+    weight_kg?: number;
+    height_cm?: number;
+    temperature_celsius?: number;
+  };
+  status?: number;
+  message?: string;
   [key: string]: unknown;
 }
 

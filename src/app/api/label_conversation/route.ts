@@ -41,30 +41,48 @@ export async function POST(request: NextRequest) {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL;
     if (!backendUrl) {
       console.error(
-        "Environment variable NEXT_PUBLIC_BACKEND_API_URL is not set"
+        "Environment variable NEXT_PUBLIC_BACKEND_API_URL is not set",
+        { timestamp: new Date().toISOString() }
       );
       return NextResponse.json(
         { message: "Backend URL not configured" },
         { status: 500 }
       );
     }
+    console.log("Backend URL:", backendUrl, {
+      timestamp: new Date().toISOString(),
+    });
 
     // Validate authorization header
     const authHeader = request.headers.get("Authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      console.error("Missing or invalid Authorization header");
+      console.error("Missing or invalid Authorization header", {
+        authHeader: authHeader || "None",
+        timestamp: new Date().toISOString(),
+      });
       return NextResponse.json(
         { message: "Unauthorized: Missing or invalid token" },
         { status: 401 }
       );
     }
     const token = authHeader.replace("Bearer ", "");
+    console.log(
+      "Authorization token extracted (first 10 chars):",
+      token.slice(0, 10) + "...",
+      {
+        timestamp: new Date().toISOString(),
+      }
+    );
 
     // Parse and validate request body
     const body: LabelConversationRequest = await request.json();
+    console.log("Request body:", JSON.stringify(body, null, 2), {
+      timestamp: new Date().toISOString(),
+    });
     if (!body.data || !Array.isArray(body.data)) {
       console.error("Invalid request body: data is missing or not an array", {
-        body,
+        body: JSON.stringify(body, null, 2),
+        timestamp: new Date().toISOString(),
       });
       return NextResponse.json(
         { message: "Invalid request body: data must be an array" },
@@ -81,7 +99,8 @@ export async function POST(request: NextRequest) {
     );
     if (!isValid) {
       console.error("Invalid segment structure in request body", {
-        data: body.data,
+        data: JSON.stringify(body.data, null, 2),
+        timestamp: new Date().toISOString(),
       });
       return NextResponse.json(
         {
@@ -91,8 +110,19 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+    console.log("Request body validated successfully", {
+      segmentCount: body.data.length,
+      timestamp: new Date().toISOString(),
+    });
 
     // Make backend API call
+    console.log(
+      "Sending request to backend:",
+      `${backendUrl}/label-conversation`,
+      {
+        timestamp: new Date().toISOString(),
+      }
+    );
     const response = await axios.post<LabelConversationResponse>(
       `${backendUrl}/label-conversation`,
       body,
@@ -101,15 +131,22 @@ export async function POST(request: NextRequest) {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
+        timeout: 30000, // 30-second timeout
       }
     );
+    console.log("Backend response received:", {
+      status: response.status,
+      data: JSON.stringify(response.data, null, 2),
+      timestamp: new Date().toISOString(),
+    });
 
     // Validate response data
     if (!response.data?.data || !Array.isArray(response.data.data)) {
       console.error(
         "Invalid backend response: data is missing or not an array",
         {
-          responseData: response.data,
+          responseData: JSON.stringify(response.data, null, 2),
+          timestamp: new Date().toISOString(),
         }
       );
       return NextResponse.json(
@@ -122,16 +159,30 @@ export async function POST(request: NextRequest) {
     const mergedData: LabelConversationResponse = {
       data: mergeSegments(response.data.data),
     };
+    console.log("Merged segments:", JSON.stringify(mergedData, null, 2), {
+      timestamp: new Date().toISOString(),
+    });
 
     return NextResponse.json(mergedData, { status: 200 });
   } catch (error) {
-    if (axios.isAxiosError(error) && error.response) {
-      const status = error.response.status;
-      const message = error.response.data?.message || error.message;
-      console.error(`Backend API error: HTTP ${status} - ${message}`, {
-        responseData: error.response.data,
+    if (axios.isAxiosError(error)) {
+      const status = error.response?.status || 500;
+      const message = error.response?.data?.message || error.message;
+      const responseData = error.response?.data || null;
+      const errorDetails = {
+        status,
+        message,
+        responseData: JSON.stringify(responseData, null, 2),
         requestUrl: `${process.env.NEXT_PUBLIC_BACKEND_API_URL}/label-conversation`,
-      });
+        requestBody: JSON.stringify(
+          await request.json().catch(() => null),
+          null,
+          2
+        ),
+        errorCode: error.code,
+        timestamp: new Date().toISOString(),
+      };
+      console.error("Backend API error:", errorDetails);
       return NextResponse.json(
         { message: `Failed to label conversation: ${message}` },
         { status: status >= 400 && status < 600 ? status : 500 }
@@ -141,6 +192,7 @@ export async function POST(request: NextRequest) {
     console.error("Labeling API error:", {
       error: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined,
+      timestamp: new Date().toISOString(),
     });
     return NextResponse.json(
       { message: "Internal Server Error" },

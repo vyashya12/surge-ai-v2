@@ -2,39 +2,69 @@ import { NextResponse } from "next/server";
 import axios from "axios";
 
 interface CombinedCreateRequest {
-  session_id: string;
-  doctor_id: string;
-  patient_summary: string;
-  doctor_summary: string;
-  notes_summary: string;
+  session_id?: string;
+  doctor_id?: string;
+  patient_summary?: string;
+  doctor_summary?: string;
+  notes_summary?: string;
   diagnosis: Array<{ diagnosis: string; likelihood: number }>;
-  data_json: {
-    data: any[]; // Allow empty array or any data
-    patient_summary: string;
-    doctor_summary: string;
-    doctor_note_summary: string;
-    diagnoses: Array<{ diagnosis: string; likelihood: number }>;
-    symptoms: string[];
-    physical_evaluation: string;
-    gender: string;
-    age: string;
+  data_json?: {
+    data?: any[];
+    patient_summary?: string;
+    doctor_summary?: string;
+    doctor_note_summary?: string;
+    diagnoses?: Array<{ diagnosis: string; likelihood: number }>;
+    symptoms?: string[];
+    physical_evaluation?: string;
+    gender?: string;
+    age?: string;
+    vitals?: {
+      blood_pressure?: string | undefined;
+      heart_rate_bpm?: string | undefined;
+      respiratory_rate_bpm?: string | undefined;
+      spo2_percent?: string | undefined;
+      pain_score?: number | undefined;
+      weight_kg?: number | undefined;
+      height_cm?: number | undefined;
+      temperature_celsius?: number | undefined;
+    };
   };
-  audio_url: string;
+  audio_url?: string;
   conversation: string;
-  physical_evaluation: string;
-  gender: string;
-  age: string;
+  physical_evaluation?: string;
+  gender?: string;
+  age?: string;
+  vitals?: {
+    blood_pressure?: string;
+    heart_rate_bpm?: string;
+    respiratory_rate_bpm?: string;
+    spo2_percent?: string;
+    pain_score?: number;
+    weight_kg?: number;
+    height_cm?: number;
+    temperature_celsius?: number;
+  };
 }
 
 interface CombinedCreateResponse {
-  session_id: string;
-  summary_id: string;
-  diagnosis_validation_id: string;
-  physical_evaluation: string;
-  gender: string;
-  age: string;
-  status?: number; // Optional, may appear in errors
-  message?: string; // Optional, may appear in errors
+  session_id?: string;
+  summary_id?: string;
+  diagnosis_validation_id?: string;
+  physical_evaluation?: string;
+  gender?: string;
+  age?: string;
+  vitals?: {
+    blood_pressure?: string;
+    heart_rate_bpm?: string;
+    respiratory_rate_bpm?: string;
+    spo2_percent?: string;
+    pain_score?: number;
+    weight_kg?: number;
+    height_cm?: number;
+    temperature_celsius?: number;
+  };
+  status?: number;
+  message?: string;
   [key: string]: unknown;
 }
 
@@ -50,78 +80,51 @@ export async function POST(request: Request) {
     }
 
     const body: CombinedCreateRequest = await request.json();
+
     // Validate required fields
     if (
-      !body.session_id ||
-      !body.doctor_id ||
-      !body.patient_summary ||
-      !body.doctor_summary ||
-      !body.notes_summary ||
       !body.diagnosis ||
       !Array.isArray(body.diagnosis) ||
-      !body.data_json ||
-      !Array.isArray(body.data_json.data) ||
-      !body.data_json.patient_summary ||
-      !body.data_json.doctor_summary ||
-      !body.data_json.doctor_note_summary ||
-      !Array.isArray(body.data_json.diagnoses) ||
-      !Array.isArray(body.data_json.symptoms) ||
-      !body.audio_url ||
-      !body.conversation ||
-      body.physical_evaluation === undefined ||
-      body.gender === undefined ||
-      body.age === undefined ||
-      body.data_json.physical_evaluation === undefined ||
-      body.data_json.gender === undefined ||
-      body.data_json.age === undefined
+      body.diagnosis.some(
+        (diag) =>
+          typeof diag.diagnosis !== "string" ||
+          typeof diag.likelihood !== "number"
+      )
     ) {
-      console.error(
-        "Invalid request body: Missing or invalid required fields",
-        {
-          missingFields: {
-            session_id: !body.session_id,
-            doctor_id: !body.doctor_id,
-            patient_summary: !body.patient_summary,
-            doctor_summary: !body.doctor_summary,
-            notes_summary: !body.notes_summary,
-            diagnosis: !body.diagnosis || !Array.isArray(body.diagnosis),
-            data_json: !body.data_json,
-            data: !body.data_json || !Array.isArray(body.data_json?.data),
-            data_json_patient_summary:
-              !body.data_json || !body.data_json.patient_summary,
-            data_json_doctor_summary:
-              !body.data_json || !body.data_json.doctor_summary,
-            data_json_doctor_note_summary:
-              !body.data_json || !body.data_json.doctor_note_summary,
-            data_json_diagnoses:
-              !body.data_json || !Array.isArray(body.data_json.diagnoses),
-            data_json_symptoms:
-              !body.data_json || !Array.isArray(body.data_json.symptoms),
-            audio_url: !body.audio_url,
-            conversation: !body.conversation,
-            physical_evaluation: body.physical_evaluation === undefined,
-            gender: body.gender === undefined,
-            age: body.age === undefined,
-            data_json_physical_evaluation:
-              !body.data_json ||
-              body.data_json.physical_evaluation === undefined,
-            data_json_gender:
-              !body.data_json || body.data_json.gender === undefined,
-            data_json_age: !body.data_json || body.data_json.age === undefined,
-          },
-        }
-      );
+      console.error("Invalid request body: Missing or invalid diagnosis", {
+        diagnosis: body.diagnosis,
+      });
       return NextResponse.json(
         {
-          message: "Invalid request body: Missing or invalid required fields",
+          message:
+            "Invalid request body: Diagnosis must be a valid array of objects with diagnosis and likelihood",
         },
         { status: 400 }
       );
     }
 
+    if (!body.conversation || typeof body.conversation !== "string") {
+      console.error("Invalid request body: Missing or invalid conversation", {
+        conversation: body.conversation,
+      });
+      return NextResponse.json(
+        {
+          message:
+            "Invalid request body: Conversation is required and must be a string",
+        },
+        { status: 400 }
+      );
+    }
+
+    // Ensure data_json has default values if undefined
+    const validatedBody: CombinedCreateRequest = {
+      ...body,
+      data_json: body.data_json || {},
+    };
+
     const response = await axios.post<CombinedCreateResponse>(
       `${backendUrl}/combined-create-v2`,
-      body,
+      validatedBody,
       {
         headers: {
           "Content-Type": "application/json",
