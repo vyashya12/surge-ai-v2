@@ -118,20 +118,20 @@ export async function POST(request: NextRequest) {
     // Make backend API call
     console.log(
       "Sending request to backend:",
-      `${backendUrl}/label-conversation`,
+      `${backendUrl}/label-conversation2`,
       {
         timestamp: new Date().toISOString(),
       }
     );
     const response = await axios.post<LabelConversationResponse>(
-      `${backendUrl}/label-conversation`,
+      `${backendUrl}/label-conversation2`,
       body,
       {
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        timeout: 30000, // 30-second timeout
+        timeout: 60000, // 30-second timeout
       }
     );
     console.log("Backend response received:", {

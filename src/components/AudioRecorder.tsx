@@ -149,6 +149,7 @@ type RecorderState = {
   keypoints: string[];
   error: string | null;
   isSending: boolean;
+  isStopping: boolean;
   doctorsNotes: string;
   gender: string;
   age: string;
@@ -175,6 +176,7 @@ export default function AudioRecorder() {
     keypoints: [],
     error: null,
     isSending: false,
+    isStopping: false,
     doctorsNotes: "",
     gender: "",
     age: "",
@@ -423,12 +425,18 @@ export default function AudioRecorder() {
       doctorsNotes: string,
       gender: string,
       age: string,
-      vitals: RecorderState["vitals"]
+      vitals: RecorderState["vitals"],
+      isFinalSend: boolean = false
     ) => {
-      if (!isHydrated || (isSendingLockRef.current && state.isRecording))
-        return;
+      if (!isHydrated) return;
+      if (!isFinalSend && isSendingLockRef.current && state.isRecording) return;
+      if (state.isStopping && !isFinalSend) return;
       isSendingLockRef.current = true;
-      setState((prev) => ({ ...prev, isSending: true }));
+      setState((prev) => ({
+        ...prev,
+        isSending: true,
+        isStopping: isFinalSend,
+      }));
 
       try {
         if (audioBlob.size < 512) {
@@ -450,7 +458,6 @@ export default function AudioRecorder() {
 
         if (!response.ok) {
           const errorData = await response.json();
-          console.error("Deepgram response error:", errorData);
           throw new Error(
             errorData.message || `Transcription failed: HTTP ${response.status}`
           );
@@ -459,19 +466,31 @@ export default function AudioRecorder() {
         const data = await response.json();
         const segments: LabeledSegment[] = data.data || [];
 
-        if (segments.length > 0) {
-          const labelResult = await labelConversation(token)({
-            data: segments,
-          });
-          if (!labelResult.ok) {
-            console.error("Label conversation failed:", labelResult.error);
-            throw new Error(
-              labelResult.error || "Failed to label conversation"
-            );
-          }
+        let formattedConversation: LabeledSegment[] = [];
+        let suggestionsData: string[] = [];
+        let summaryData: Summary | null = null;
+        let diagnosisData: Diagnosis = {
+          diagnoses: [{ diagnosis: "Unknown", likelihood: 0 }],
+          symptoms: [],
+        };
+        let keypointsData: string[] = [];
 
-          const labeledData = labelResult.value?.data || [];
-          const formattedConversation = labeledData.map((segment) => ({
+        if (segments.length > 0) {
+          const validSegments = segments.filter(
+            (segment) => segment.text.trim().length >= 5
+          );
+
+          const labelResult = await labelConversation(token)({
+            data: validSegments,
+          });
+          const labeledData = labelResult.ok
+            ? labelResult.value?.data || []
+            : validSegments.map((segment) => ({
+                text: segment.text.trim(),
+                speaker: segment.speaker === "Speaker 0" ? "doctor" : "patient",
+              }));
+
+          formattedConversation = labeledData.map((segment) => ({
             text: segment.text.trim(),
             speaker: segment.speaker,
           }));
@@ -485,14 +504,12 @@ export default function AudioRecorder() {
           const suggestionsResult = await getSuggestions(token)(
             conversationData
           );
-          const suggestionsData = suggestionsResult.ok
+          suggestionsData = suggestionsResult.ok
             ? suggestionsResult.value?.suggestions || []
             : [];
 
           const summaryResult = await getSummary(token)(conversationData);
-          const summaryData = summaryResult.ok
-            ? summaryResult.value || null
-            : null;
+          summaryData = summaryResult.ok ? summaryResult.value || null : null;
 
           const diagnosisRequest = {
             conversation_input: conversationData,
@@ -503,42 +520,33 @@ export default function AudioRecorder() {
             threshold: 0.7,
           };
           const diagnosisResult = await getDiagnosis(token)(diagnosisRequest);
-          const diagnosisData: Diagnosis = diagnosisResult.ok
-            ? diagnosisResult.value
-            : {
-                diagnoses: [{ diagnosis: "Unknown", likelihood: 0 }],
-                symptoms: [],
-                source: "fallback",
-                similarity: 0,
-                doctors_notes: doctorsNotes || undefined,
-                gender: gender || undefined,
-                age: age || undefined,
-                vitals: Object.keys(vitals).length > 0 ? vitals : undefined,
-              };
+          if (diagnosisResult.ok) {
+            diagnosisData = diagnosisResult.value;
+          }
 
           const keypointsRequest = {
             conversation_input: conversationData,
             doctors_notes: doctorsNotes,
           };
           const keypointsResult = await getKeypoints(token)(keypointsRequest);
-          const keypointsData = keypointsResult.ok
+          keypointsData = keypointsResult.ok
             ? keypointsResult.value?.keypoints || []
             : [];
-
-          setState((prev) => ({
-            ...prev,
-            labeledSegments: formattedConversation,
-            suggestions: suggestionsData,
-            summary: summaryData,
-            diagnosis: diagnosisData,
-            keypoints: keypointsData,
-            error: null,
-            isSending: false,
-          }));
         } else {
           console.warn("No segments returned from Deepgram");
-          setState((prev) => ({ ...prev, isSending: false }));
         }
+
+        setState((prev) => ({
+          ...prev,
+          labeledSegments: formattedConversation,
+          suggestions: suggestionsData,
+          summary: summaryData || prev.summary,
+          diagnosis: diagnosisData,
+          keypoints: keypointsData,
+          error: null,
+          isSending: false,
+          isStopping: isFinalSend ? false : prev.isStopping,
+        }));
       } catch (error: unknown) {
         const errorMessage =
           error instanceof Error
@@ -551,20 +559,13 @@ export default function AudioRecorder() {
           ...prev,
           error: errorMessage,
           isSending: false,
+          isStopping: isFinalSend ? false : prev.isStopping,
         }));
       } finally {
         isSendingLockRef.current = false;
       }
     },
-    [
-      isHydrated,
-      token,
-      state.isRecording,
-      state.doctorsNotes,
-      state.gender,
-      state.age,
-      state.vitals,
-    ]
+    [isHydrated, token, state.isRecording, state.isStopping]
   );
 
   const uploadAudioToS3 = useCallback(async () => {
@@ -711,8 +712,18 @@ export default function AudioRecorder() {
       const recorder = new MediaRecorder(stream, { mimeType });
 
       recorder.ondataavailable = async (event) => {
-        if (!event.data.size) return;
+        if (!event.data.size || event.data.size < 512) {
+          console.warn("Empty or small audio chunk, skipping:", {
+            size: event.data.size,
+            timestamp: new Date().toISOString(),
+          });
+          return;
+        }
         audioChunksRef.current.push(event.data);
+        console.log("Audio chunk captured:", {
+          size: event.data.size,
+          timestamp: new Date().toISOString(),
+        });
 
         const doctorsNotes = doctorsNotesRef.current;
         const gender = genderRef.current;
@@ -760,7 +771,7 @@ export default function AudioRecorder() {
         session: undefined,
       }));
     } catch (err: any) {
-      console.error(err);
+      console.error("Recording error:", err);
       setState((s) => ({ ...s, error: err.message || "Recording error" }));
     }
   }, [isHydrated, sendAudio]);
@@ -769,9 +780,9 @@ export default function AudioRecorder() {
     if (mediaRecorder && mediaRecorder.state !== "inactive") {
       mediaRecorder.stop();
       setMediaRecorder(null);
-      setState((prev) => ({ ...prev, isRecording: false }));
+      setState((prev) => ({ ...prev, isRecording: false, isStopping: true }));
 
-      // Trigger final sendAudio with accumulated chunks
+      // Final sendAudio with accumulated chunks
       if (audioChunksRef.current.length > 0) {
         const mimeType = mediaRecorder.mimeType || getSupportedMimeType();
         const finalBlob = new Blob(audioChunksRef.current, { type: mimeType });
@@ -780,11 +791,19 @@ export default function AudioRecorder() {
         const age = ageRef.current;
         const vitals = vitalsRef.current;
 
-        await sendAudio(finalBlob, 0, doctorsNotes, gender, age, vitals);
+        await sendAudio(
+          finalBlob,
+          Date.now(),
+          doctorsNotes,
+          gender,
+          age,
+          vitals,
+          true
+        );
         await saveAudioLocally(finalBlob);
       }
 
-      setState((prev) => ({ ...prev, isSending: false }));
+      setState((prev) => ({ ...prev, isSending: false, isStopping: false }));
     }
   }, [mediaRecorder, sendAudio, saveAudioLocally]);
 
@@ -963,7 +982,6 @@ export default function AudioRecorder() {
                     ? "bg-[#f27252] hover:bg-[#ea5321] w-[49%]"
                     : "bg-[#34E796] hover:bg-[#00c36b] w-[49%]"
                 }
-                disabled={state.isRecording && isSendingLockRef.current}
               >
                 {state.isRecording ? "Stop Recording" : "Start Recording"}
               </Button>
@@ -980,16 +998,16 @@ export default function AudioRecorder() {
               )}
             </div>
 
-            {state.suggestions.length > 0 && (
-              <div className="mt-8">
-                <h3 className="font-bold mb-2 text-lg sm:text-xl">
-                  Doctor Reply Suggestions
+            {state.keypoints.length > 0 && (
+              <div className="mt-4">
+                <h3 className="font-semibold mb-2 text-base sm:text-lg">
+                  Key Points
                 </h3>
-                <div className="bg-white p-4 rounded-md shadow-sm">
-                  <ul className="list-disc pl-5">
-                    {state.suggestions.map((suggestion, index) => (
-                      <li key={index} className="mb-2">
-                        {formatText(suggestion)}
+                <div className="bg-white p-3 rounded-md shadow-sm">
+                  <ul className="list-disc pl-5 text-sm sm:text-base">
+                    {state.keypoints.map((keypoint, index) => (
+                      <li key={`keypoint-${index}`} className="mb-2">
+                        {formatText(keypoint)}
                       </li>
                     ))}
                   </ul>
@@ -1126,22 +1144,22 @@ export default function AudioRecorder() {
             )}
           </div>
         </Card>
-        {/* Keypoints Sidebar Desktop */}
-        <Card className="hidden sm:block w-4/12 bg-white overflow-y-auto pl-8 max-h-screen">
-          <h3 className="font-semibold mb-4 text-lg">Key Points</h3>
-          {state.keypoints.length > 0 ? (
-            <ul className="list-disc pl-6">
-              {state.keypoints.map((keypoint, index) => (
-                <li key={index} className="mb-2">
-                  {formatText(keypoint)}
+        {/* Suggestions Sidebar Desktop */}
+        <Card className="hidden sm:block w-4/12 bg-white overflow-y-auto pl-6 max-h-screen">
+          <h3 className="font-semibold mb-4 text-lg">Doctor Suggestions</h3>
+          {state.suggestions.length > 0 ? (
+            <ul className="list-disc pl-6 mb-6">
+              {state.suggestions.map((suggestion, index) => (
+                <li key={`suggestion-${index}`} className="mb-2">
+                  {formatText(suggestion)}
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="text-gray-500 text-sm">No key points available.</p>
+            <p className="text-gray-500 text-sm">No suggestions available.</p>
           )}
         </Card>
-        {/* Keypoints Mobile */}
+        {/* Suggestions Mobile */}
         <div className="sm:hidden fixed bottom-4 left-4">
           <Dialog
             open={isKeypointsOpen}
@@ -1153,18 +1171,18 @@ export default function AudioRecorder() {
               </Button>
             </DialogTrigger>
             <DialogContent className="fixed bottom-0 left-0 right-0 bg-white p-4 rounded-t-lg shadow-lg max-h-[50vh] overflow-y-auto">
-              <h3 className="font-bold mb-2 text-lg">Key Points</h3>
-              {state.keypoints.length > 0 ? (
+              <h3 className="font-bold mb-4 text-lg">Doctor Suggestions</h3>
+              {state.suggestions.length > 0 ? (
                 <ul className="list-disc pl-5 text-sm">
-                  {state.keypoints.map((keypoint, index) => (
-                    <li key={index} className="mb-2">
-                      {formatText(keypoint)}
+                  {state.suggestions.map((suggestion, index) => (
+                    <li key={`suggestion-${index}`} className="mb-2">
+                      {formatText(suggestion)}
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p className="text-gray-500 text-sm">
-                  No key points available.
+                <p className="text-gray-700 text-sm">
+                  No suggestions available.
                 </p>
               )}
             </DialogContent>
