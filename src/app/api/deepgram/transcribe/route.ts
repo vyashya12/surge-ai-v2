@@ -1,13 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@deepgram/sdk";
 
-interface Segment {
-  text: string;
-  speaker: string;
-}
-
 interface TranscribeResponse {
-  data: Segment[];
+  text: string;
 }
 
 export async function POST(request: NextRequest) {
@@ -44,13 +39,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate audio size and type
-    if (audioBlob.size < 512) {
-      console.error(`Audio blob too small: ${audioBlob.size} bytes`);
-      return NextResponse.json(
-        { message: "Audio file too small" },
-        { status: 400 }
-      );
-    }
+    // if (audioBlob.size < 512) {
+    //   console.error(`Audio blob too small: ${audioBlob.size} bytes`);
+    //   return NextResponse.json(
+    //     { message: "Audio file too small" },
+    //     { status: 400 }
+    //   );
+    // }
 
     const mimeType = audioBlob.type || "audio/webm;codecs=opus";
     const supportedMimeTypes = [
@@ -73,13 +68,12 @@ export async function POST(request: NextRequest) {
     // Initialize Deepgram client
     const deepgram = createClient(deepgramApiKey);
 
-    // Transcribe audio
+    // Transcribe audio without diarization
     const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
       audioBuffer,
       {
-        model: "nova-2",
+        model: "whisper-large",
         smart_format: true,
-        diarize: true,
         punctuate: true,
         utterances: true,
         mimetype: mimeType,
@@ -94,47 +88,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Extract transcription
-    const alternatives = result?.results?.channels?.[0]?.alternatives || [];
-    if (!alternatives.length || !alternatives[0].words?.length) {
-      console.warn("No words returned from Deepgram");
+    // Extract transcription text
+    const transcript =
+      result?.results?.channels?.[0]?.alternatives?.[0]?.transcript?.trim() ||
+      "";
+    if (!transcript) {
+      console.warn("No transcription available");
       return NextResponse.json(
-        { message: "No transcription available", data: [] },
+        { message: "No transcription available", text: "" },
         { status: 200 }
       );
     }
 
-    // Map words to segments with speaker identification
-    const segments: Segment[] = [];
-    let currentSpeaker: string | null = null;
-    let currentText: string[] = [];
-
-    for (const wordInfo of alternatives[0].words) {
-      const speaker = `Speaker ${wordInfo.speaker ?? 0}`;
-      if (currentSpeaker === null) {
-        currentSpeaker = speaker;
-      }
-
-      if (speaker !== currentSpeaker && currentText.length) {
-        segments.push({
-          text: currentText.join(" ").trim(),
-          speaker: currentSpeaker,
-        });
-        currentText = [];
-        currentSpeaker = speaker;
-      }
-
-      currentText.push(wordInfo.punctuated_word || wordInfo.word);
-    }
-
-    if (currentText.length) {
-      segments.push({
-        text: currentText.join(" ").trim(),
-        speaker: currentSpeaker!,
-      });
-    }
-
-    return NextResponse.json({ data: segments }, { status: 200 });
+    return NextResponse.json({ text: transcript }, { status: 200 });
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : "Failed to transcribe audio";

@@ -6,7 +6,6 @@ import {
   DiagnosisSuggestion,
   Result,
   DiagnosisValidation,
-  DiagnosisValidationRequest,
   DiagnosisValidationResponse,
 } from "@/types";
 
@@ -297,33 +296,34 @@ export const suggestDiagnoses =
   };
 
 // Label conversation
-interface LabelConversationRequest {
-  data: { text: string; speaker: string }[];
-}
-
-interface LabelConversationResponse {
-  data: { text: string; speaker: string }[];
-}
-
 export const labelConversation =
-  (token: string | null) =>
-  async (
-    data: LabelConversationRequest
-  ): Promise<Result<LabelConversationResponse, string>> => {
+  (token: string) =>
+  async (input: {
+    data: { text: string; speaker: string }[];
+  }): Promise<
+    Result<{ data: { text: string; speaker: string }[] }, string>
+  > => {
     try {
-      const client = createApiClient(token);
-      const response = await client.post<LabelConversationResponse>(
-        "/label_conversation",
-        data
-      );
-      return response;
-    } catch (error: unknown) {
-      const appError = error as AppError;
-      console.error("labelConversation fetch error:", appError);
-      return {
-        ok: false,
-        error: appError.message || "Failed to fetch labelConversation",
-      };
+      // **3) send the same shape the route now expects**
+      const response = await fetch("/api/label_conversation", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ data: input.data }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json();
+        return { ok: false, error: err.message || `HTTP ${response.status}` };
+      }
+
+      const payload: { data: { text: string; speaker: string }[] } =
+        await response.json();
+      return { ok: true, value: payload };
+    } catch (e) {
+      return { ok: false, error: (e as Error).message };
     }
   };
 

@@ -1,3 +1,5 @@
+// app/api/label_conversation/route.ts
+
 import { NextRequest, NextResponse } from "next/server";
 import axios from "axios";
 
@@ -14,8 +16,9 @@ interface LabelConversationResponse {
   data: Segment[];
 }
 
+// Simple merge of same‐speaker runs
 const mergeSegments = (segments: Segment[]): Segment[] => {
-  if (!segments.length) return [];
+  if (segments.length === 0) return [];
   const merged: Segment[] = [];
   let current = { ...segments[0] };
 
@@ -29,171 +32,121 @@ const mergeSegments = (segments: Segment[]): Segment[] => {
     }
   }
   merged.push({ ...current });
+  return merged.map((seg) => ({ text: seg.text.trim(), speaker: seg.speaker }));
+};
 
-  return merged.map((segment) => ({
-    text: segment.text.trim(),
-    speaker: segment.speaker,
-  }));
+// Heuristic to flip mis-labeled speakers
+const correctSpeakerLabels = (segments: Segment[]): Segment[] => {
+  return segments.map((segment, idx) => {
+    const txt = segment.text.toLowerCase();
+    let speaker = segment.speaker;
+
+    if (
+      txt.includes("?") ||
+      txt.includes("let's") ||
+      txt.includes("recommend") ||
+      txt.includes("x-ray")
+    ) {
+      speaker = "doctor";
+    } else if (
+      txt.includes("i have") ||
+      txt.includes("pain") ||
+      txt.includes("yeah")
+    ) {
+      speaker = "patient";
+    }
+
+    // alternate if two in a row of same
+    if (
+      idx > 0 &&
+      segments[idx - 1].speaker === speaker &&
+      !txt.startsWith("and") &&
+      !txt.startsWith(",")
+    ) {
+      speaker = speaker === "doctor" ? "patient" : "doctor";
+    }
+
+    return { text: segment.text, speaker };
+  });
 };
 
 export async function POST(request: NextRequest) {
+  // 1) Ensure backend URL is configured
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL;
+  if (!backendUrl) {
+    console.error("Missing NEXT_PUBLIC_BACKEND_API_URL");
+    return NextResponse.json(
+      { message: "Backend URL not configured" },
+      { status: 500 }
+    );
+  }
+
+  // 2) Auth check
+  const authHeader = request.headers.get("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    console.error("Missing or invalid Authorization header");
+    return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+  }
+
+  // 3) Parse incoming body
+  let body: LabelConversationRequest;
   try {
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL;
-    if (!backendUrl) {
-      console.error(
-        "Environment variable NEXT_PUBLIC_BACKEND_API_URL is not set",
-        { timestamp: new Date().toISOString() }
-      );
-      return NextResponse.json(
-        { message: "Backend URL not configured" },
-        { status: 500 }
-      );
-    }
-    console.log("Backend URL:", backendUrl, {
-      timestamp: new Date().toISOString(),
-    });
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ message: "Invalid JSON" }, { status: 400 });
+  }
 
-    // Validate authorization header
-    const authHeader = request.headers.get("Authorization");
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      console.error("Missing or invalid Authorization header", {
-        authHeader: authHeader || "None",
-        timestamp: new Date().toISOString(),
-      });
-      return NextResponse.json(
-        { message: "Unauthorized: Missing or invalid token" },
-        { status: 401 }
-      );
-    }
-    const token = authHeader.replace("Bearer ", "");
-    console.log(
-      "Authorization token extracted (first 10 chars):",
-      token.slice(0, 10) + "...",
-      {
-        timestamp: new Date().toISOString(),
-      }
+  if (!Array.isArray(body.data) || body.data.length === 0) {
+    return NextResponse.json(
+      { message: "Invalid request: data must be a non-empty array" },
+      { status: 400 }
     );
+  }
 
-    // Parse and validate request body
-    const body: LabelConversationRequest = await request.json();
-    console.log("Request body:", JSON.stringify(body, null, 2), {
-      timestamp: new Date().toISOString(),
-    });
-    if (!body.data || !Array.isArray(body.data)) {
-      console.error("Invalid request body: data is missing or not an array", {
-        body: JSON.stringify(body, null, 2),
-        timestamp: new Date().toISOString(),
-      });
-      return NextResponse.json(
-        { message: "Invalid request body: data must be an array" },
-        { status: 400 }
-      );
-    }
-
-    // Validate segment structure
-    const isValid = body.data.every(
-      (segment) =>
-        typeof segment.text === "string" &&
-        typeof segment.speaker === "string" &&
-        segment.text.trim().length > 0
-    );
-    if (!isValid) {
-      console.error("Invalid segment structure in request body", {
-        data: JSON.stringify(body.data, null, 2),
-        timestamp: new Date().toISOString(),
-      });
-      return NextResponse.json(
-        {
-          message:
-            "Invalid segment structure: each segment must have a non-empty text and speaker string",
-        },
-        { status: 400 }
-      );
-    }
-    console.log("Request body validated successfully", {
-      segmentCount: body.data.length,
-      timestamp: new Date().toISOString(),
-    });
-
-    // Make backend API call
-    console.log(
-      "Sending request to backend:",
+  try {
+    // 4) Forward to your v2 endpoint
+    const resp = await axios.post<LabelConversationResponse>(
       `${backendUrl}/label-conversation2`,
-      {
-        timestamp: new Date().toISOString(),
-      }
-    );
-    const response = await axios.post<LabelConversationResponse>(
-      `${backendUrl}/label-conversation2`,
-      body,
+      { data: body.data },
       {
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+          Authorization: authHeader,
         },
-        timeout: 60000, // 30-second timeout
       }
     );
-    console.log("Backend response received:", {
-      status: response.status,
-      data: JSON.stringify(response.data, null, 2),
-      timestamp: new Date().toISOString(),
-    });
 
-    // Validate response data
-    if (!response.data?.data || !Array.isArray(response.data.data)) {
+    if (!Array.isArray(resp.data.data)) {
+      console.error("Bad response shape from backend:", resp.data);
+      return NextResponse.json(
+        { message: "Invalid backend response" },
+        { status: 502 }
+      );
+    }
+
+    // 5) Correct & merge
+    const corrected = correctSpeakerLabels(resp.data.data);
+    const merged = mergeSegments(corrected);
+
+    // 6) Return cleaned segments
+    return NextResponse.json({ data: merged }, { status: 200 });
+  } catch (err: any) {
+    // Axios errors
+    if (axios.isAxiosError(err) && err.response) {
       console.error(
-        "Invalid backend response: data is missing or not an array",
+        `Backend API error: HTTP ${err.response.status}`,
+        err.response.data
+      );
+      return NextResponse.json(
         {
-          responseData: JSON.stringify(response.data, null, 2),
-          timestamp: new Date().toISOString(),
-        }
-      );
-      return NextResponse.json(
-        { message: "Invalid backend response: data must be an array" },
-        { status: 500 }
+          message: `Backend error: ${
+            err.response.data?.message || err.message
+          }`,
+        },
+        { status: err.response.status }
       );
     }
-
-    // Merge segments
-    const mergedData: LabelConversationResponse = {
-      data: mergeSegments(response.data.data),
-    };
-    console.log("Merged segments:", JSON.stringify(mergedData, null, 2), {
-      timestamp: new Date().toISOString(),
-    });
-
-    return NextResponse.json(mergedData, { status: 200 });
-  } catch (error) {
-    if (axios.isAxiosError(error)) {
-      const status = error.response?.status || 500;
-      const message = error.response?.data?.message || error.message;
-      const responseData = error.response?.data || null;
-      const errorDetails = {
-        status,
-        message,
-        responseData: JSON.stringify(responseData, null, 2),
-        requestUrl: `${process.env.NEXT_PUBLIC_BACKEND_API_URL}/label-conversation`,
-        requestBody: JSON.stringify(
-          await request.json().catch(() => null),
-          null,
-          2
-        ),
-        errorCode: error.code,
-        timestamp: new Date().toISOString(),
-      };
-      console.error("Backend API error:", errorDetails);
-      return NextResponse.json(
-        { message: `Failed to label conversation: ${message}` },
-        { status: status >= 400 && status < 600 ? status : 500 }
-      );
-    }
-
-    console.error("Labeling API error:", {
-      error: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined,
-      timestamp: new Date().toISOString(),
-    });
+    console.error("Unexpected error in label_conversation:", err);
     return NextResponse.json(
       { message: "Internal Server Error" },
       { status: 500 }
