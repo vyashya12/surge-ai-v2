@@ -194,9 +194,7 @@ export default function AudioRecorder() {
   );
   const [isHydrated, setIsHydrated] = useState(false);
   const [isKeypointsOpen, setIsKeypointsOpen] = useState(false);
-  const sendIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-  const chunkTimestampsRef = useRef<number[]>([]);
   const sessionIdRef = useRef<string>(uuidv4());
   const audioFilenameRef = useRef<string | null>(null);
   const isSendingLockRef = useRef<boolean>(false);
@@ -204,7 +202,10 @@ export default function AudioRecorder() {
   const genderRef = useRef(state.gender);
   const ageRef = useRef(state.age);
   const vitalsRef = useRef(state.vitals);
-  const audioQueueRef = useRef<{ blob: Blob; timestamp: number }[]>([]);
+
+  const audioQueueRef = useRef<Blob[]>([]);
+  const sendIntervalRef = useRef<number | null>(null);
+  const startTimeRef = useRef<number>(0);
 
   useEffect(() => {
     doctorsNotesRef.current = state.doctorsNotes;
@@ -248,12 +249,10 @@ export default function AudioRecorder() {
   useEffect(() => {
     setIsHydrated(true);
     return () => {
-      // stop recorder if still running
       if (mediaRecorder && mediaRecorder.state !== "inactive") {
         mediaRecorder.stop();
       }
-      // clear our 10 s timer
-      if (sendIntervalRef.current) {
+      if (sendIntervalRef.current !== null) {
         clearInterval(sendIntervalRef.current);
         sendIntervalRef.current = null;
       }
@@ -380,7 +379,7 @@ export default function AudioRecorder() {
   };
 
   const saveAudioLocally = useCallback(
-    async (audioBlobParam?: Blob) => {
+    async (audioBlobParam?: Blob, startTime: number = Date.now()) => {
       if (audioChunksRef.current.length === 0) {
         console.warn("No audio chunks to save locally");
         return;
@@ -393,10 +392,11 @@ export default function AudioRecorder() {
 
         const formData = new FormData();
         formData.append("sessionId", sessionIdRef.current);
+        const ext = mediaRecorder?.mimeType?.includes("webm") ? "webm" : "wav";
         formData.append(
           "audio",
           audioBlob,
-          `audio-${sessionIdRef.current}.wav`
+          `chunk-${sessionIdRef.current}-${startTime}.${ext}`
         );
 
         const response = await fetch("/api/save-audio", {
@@ -466,10 +466,12 @@ export default function AudioRecorder() {
         }
 
         const formData = new FormData();
+        const mime = mediaRecorder?.mimeType || getSupportedMimeType();
+        const ext = mime.split("/")[1].split(";")[0]; // e.g. "webm"
         formData.append(
           "audio",
           audioBlob,
-          `chunk-${sessionIdRef.current}-${startTime}.wav`
+          `chunk-${sessionIdRef.current}-${startTime}.${ext}`
         );
 
         console.log("Sending to /api/deepgram/transcribe:", {
@@ -575,61 +577,67 @@ export default function AudioRecorder() {
               speaker: segment.speaker,
             }));
 
-          const conversationData = {
-            data: formattedConversation.map((segment) => ({
-              [segment.speaker]: segment.text,
-            })),
-          };
-
-          console.log("Calling getSuggestions:", new Date().toISOString());
-          const suggestionsResult = await getSuggestions(token)(
-            conversationData
-          );
-          suggestionsData = suggestionsResult.ok
-            ? suggestionsResult.value?.suggestions || []
-            : [];
-
-          console.log("Calling getSummary:", new Date().toISOString());
-          const summaryResult = await getSummary(token)(conversationData);
-          summaryData = summaryResult.ok ? summaryResult.value || null : null;
-
-          console.log("Calling getDiagnosis:", new Date().toISOString());
-          const diagnosisRequest = {
-            conversation_input: conversationData,
-            doctors_notes: doctorsNotes || undefined,
-            gender: gender || undefined,
-            age: age || undefined,
-            vitals: Object.keys(vitals).length > 0 ? vitals : undefined,
-            threshold: 0.7,
-          };
-          const diagnosisResult = await getDiagnosis(token)(diagnosisRequest);
-          if (!diagnosisResult.ok) {
-            console.error("getDiagnosis failed:", {
-              error: diagnosisResult.error,
-              request: JSON.stringify(diagnosisRequest, null, 2),
-              timestamp: new Date().toISOString(),
-            });
-            diagnosisData = {
-              diagnoses: [{ diagnosis: "Diagnosis failed", likelihood: 0 }],
-              symptoms: [],
+          if (formattedConversation.length > 0) {
+            const conversationData = {
+              data: formattedConversation.map((segment) => ({
+                [segment.speaker]: segment.text,
+              })),
             };
-          } else {
-            diagnosisData = diagnosisResult.value;
-            console.log("getDiagnosis succeeded:", {
-              diagnoses: diagnosisData.diagnoses.length,
-              timestamp: new Date().toISOString(),
-            });
-          }
 
-          console.log("Calling getKeypoints:", new Date().toISOString());
-          const keypointsRequest = {
-            conversation_input: conversationData,
-            doctors_notes: doctorsNotes,
-          };
-          const keypointsResult = await getKeypoints(token)(keypointsRequest);
-          keypointsData = keypointsResult.ok
-            ? keypointsResult.value?.keypoints || []
-            : [];
+            console.log("Calling getSuggestions:", new Date().toISOString());
+            const suggestionsResult = await getSuggestions(token)(
+              conversationData
+            );
+            suggestionsData = suggestionsResult.ok
+              ? suggestionsResult.value?.suggestions || []
+              : [];
+
+            console.log("Calling getSummary:", new Date().toISOString());
+            const summaryResult = await getSummary(token)(conversationData);
+            summaryData = summaryResult.ok ? summaryResult.value || null : null;
+
+            console.log("Calling getDiagnosis:", new Date().toISOString());
+            const diagnosisRequest = {
+              conversation_input: conversationData,
+              doctors_notes: doctorsNotes || undefined,
+              gender: gender || undefined,
+              age: age || undefined,
+              vitals: Object.keys(vitals).length > 0 ? vitals : undefined,
+              threshold: 0.7,
+            };
+            const diagnosisResult = await getDiagnosis(token)(diagnosisRequest);
+            if (!diagnosisResult.ok) {
+              console.error("getDiagnosis failed:", {
+                error: diagnosisResult.error,
+                request: JSON.stringify(diagnosisRequest, null, 2),
+                timestamp: new Date().toISOString(),
+              });
+              diagnosisData = {
+                diagnoses: [{ diagnosis: "Diagnosis failed", likelihood: 0 }],
+                symptoms: [],
+              };
+            } else {
+              diagnosisData = diagnosisResult.value;
+              console.log("getDiagnosis succeeded:", {
+                diagnoses: diagnosisData.diagnoses.length,
+                timestamp: new Date().toISOString(),
+              });
+            }
+
+            console.log("Calling getKeypoints:", new Date().toISOString());
+            const keypointsRequest = {
+              conversation_input: conversationData,
+              doctors_notes: doctorsNotes,
+            };
+            const keypointsResult = await getKeypoints(token)(keypointsRequest);
+            keypointsData = keypointsResult.ok
+              ? keypointsResult.value?.keypoints || []
+              : [];
+          } else {
+            console.warn(
+              "no segments to send to suggestions/summary/diagnosis"
+            );
+          }
         } else {
           console.warn("No transcription returned from Deepgram", {
             timestamp: new Date().toISOString(),
@@ -674,43 +682,8 @@ export default function AudioRecorder() {
         console.log("sendAudio lock released:", new Date().toISOString());
       }
     },
-    [token, isHydrated]
+    [token, isHydrated, mediaRecorder]
   );
-
-  const processAudioQueue = useCallback(async () => {
-    if (isSendingLockRef.current || audioQueueRef.current.length === 0) {
-      console.log("processAudioQueue skipped:", {
-        isSending: isSendingLockRef.current,
-        queueLength: audioQueueRef.current.length,
-        timestamp: new Date().toISOString(),
-      });
-      return;
-    }
-
-    // Stitch all chunks for this send
-    const mimeType = mediaRecorder?.mimeType || "audio/webm;codecs=opus";
-    const stitchedBlob = new Blob(audioChunksRef.current, { type: mimeType });
-    const timestamp = chunkTimestampsRef.current[0] || Date.now();
-
-    // Clear queue since we're sending the stitched blob
-    audioQueueRef.current = [];
-
-    console.log("Processing stitched audio:", {
-      blobSize: stitchedBlob.size,
-      chunks: audioChunksRef.current.length,
-      timestamp: new Date().toISOString(),
-    });
-
-    await sendAudio(
-      stitchedBlob,
-      timestamp,
-      doctorsNotesRef.current,
-      genderRef.current,
-      ageRef.current,
-      vitalsRef.current,
-      false
-    );
-  }, [sendAudio, mediaRecorder]);
 
   const uploadAudioToS3 = useCallback(async () => {
     if (!audioFilenameRef.current) {
@@ -846,28 +819,58 @@ export default function AudioRecorder() {
     }
   }, [token, doctorId, state]);
 
+  const processAudioQueue = useCallback(async () => {
+    if (isSendingLockRef.current || audioQueueRef.current.length === 0) {
+      return;
+    }
+
+    isSendingLockRef.current = true;
+    const batch = audioQueueRef.current.slice();
+    const ts = startTimeRef.current || Date.now();
+
+    // reset queue before we send so errors don’t poison future batches
+    audioQueueRef.current = [];
+    startTimeRef.current = 0;
+
+    try {
+      const blob = new Blob(batch, {
+        type: mediaRecorder?.mimeType || getSupportedMimeType(),
+      });
+      await sendAudio(
+        blob,
+        ts,
+        doctorsNotesRef.current,
+        genderRef.current,
+        ageRef.current,
+        vitalsRef.current,
+        false
+      );
+    } catch (err) {
+      console.error("Batch send failed:", err);
+    } finally {
+      isSendingLockRef.current = false;
+    }
+  }, [mediaRecorder, sendAudio]);
+
   const startRecording = useCallback(async () => {
     if (!isHydrated) return;
+
+    audioChunksRef.current = [];
+    audioQueueRef.current = [];
+    startTimeRef.current = 0;
+
     try {
-      audioChunksRef.current = [];
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mimeType = getSupportedMimeType();
-      console.log("MediaRecorder MIME:", mimeType);
-
       const recorder = new MediaRecorder(stream, { mimeType });
 
       recorder.ondataavailable = (event) => {
-        if (!event.data.size || event.data.size < 1024) return;
-
-        // stash for final Blob
+        if (event.data.size < 1024) return;
         audioChunksRef.current.push(event.data);
-
-        // enqueue chunk for transcription
-        const blob = new Blob([event.data], { type: mimeType });
-        audioQueueRef.current.push({ blob, timestamp: Date.now() });
-
-        // kick off the queue‐processor (no double‐runs)
-        processAudioQueue();
+        audioQueueRef.current.push(event.data);
+        if (!startTimeRef.current) {
+          startTimeRef.current = Date.now();
+        }
       };
 
       recorder.onstop = () => {
@@ -876,119 +879,94 @@ export default function AudioRecorder() {
       };
 
       recorder.start(10_000);
+      sendIntervalRef.current = window.setInterval(processAudioQueue, 10_000);
       setMediaRecorder(recorder);
       setState((prev) => ({
         ...prev,
         isRecording: true,
         isPaused: false,
+        labeledSegments: [],
         suggestions: [],
         summary: null,
         diagnosis: null,
         keypoints: [],
-        labeledSegments: [],
         error: null,
         isSending: false,
         session: undefined,
       }));
-      // 🚀 start our 10 s “flush” timer
-      if (sendIntervalRef.current) clearInterval(sendIntervalRef.current);
-      sendIntervalRef.current = setInterval(() => {
-        console.log("🔄 10 s flush");
-        processAudioQueue();
-      }, 10_000);
     } catch (err: any) {
-      console.error("Recording error:", err.message);
+      console.error("startRecording error:", err);
       setState((prev) => ({
         ...prev,
-        error: err.message || "Failed to start recording. Check microphone.",
+        error: err.message || "Failed to start recording",
       }));
     }
-  }, [isHydrated, sendAudio]);
+  }, [isHydrated, processAudioQueue]);
 
   const pauseRecording = useCallback(async () => {
-    if (!mediaRecorder || !state.isRecording) return;
+    if (!mediaRecorder) return;
 
-    // if a send is in flight, wait for it to finish
+    // wait for any in-flight send to finish
     while (isSendingLockRef.current) {
       await new Promise((r) => setTimeout(r, 50));
     }
 
-    // clear the 10s interval so no more auto-flushes
-    if (sendIntervalRef.current) {
-      clearInterval(sendIntervalRef.current);
-      sendIntervalRef.current = null;
-    }
-
-    // force-flush anything buffered
-    await processAudioQueue();
-
-    // now pause the recorder
     if (mediaRecorder.state === "recording") {
       mediaRecorder.pause();
-      console.log("Recording paused");
+      if (sendIntervalRef.current !== null) {
+        clearInterval(sendIntervalRef.current);
+        sendIntervalRef.current = null;
+      }
     } else {
       mediaRecorder.resume();
-      console.log("Recording resumed");
-      // restart your 10s flush
-      sendIntervalRef.current = setInterval(processAudioQueue, 10_000);
+      sendIntervalRef.current = window.setInterval(processAudioQueue, 10_000);
+      // reset batch timer so we don't send an immediate stale batch
+      startTimeRef.current = Date.now();
     }
 
     setState((s) => ({ ...s, isPaused: !s.isPaused }));
-  }, [mediaRecorder, state.isRecording, processAudioQueue]);
+  }, [mediaRecorder, processAudioQueue]);
 
   const stopRecording = useCallback(async () => {
-    if (!mediaRecorder || mediaRecorder.state === "inactive") return;
-
-    mediaRecorder.stop();
-    setMediaRecorder(null);
-    setState((s) => ({
-      ...s,
-      isRecording: false,
-      isPaused: false,
-      isStopping: true,
-    }));
-    console.log("Stopping recording…", new Date().toISOString());
-
-    while (isSendingLockRef.current) {
-      console.log(
-        "Waiting for in-flight send to complete",
-        new Date().toISOString()
-      );
-      await new Promise((r) => setTimeout(r, 100));
-    }
-
-    if (sendIntervalRef.current) {
+    // tear down interval
+    if (sendIntervalRef.current !== null) {
       clearInterval(sendIntervalRef.current);
       sendIntervalRef.current = null;
     }
 
+    // flush any remaining queued chunks
     await processAudioQueue();
 
-    if (audioChunksRef.current.length > 0) {
-      const mimeType = mediaRecorder.mimeType || getSupportedMimeType();
-      const finalBlob = new Blob(audioChunksRef.current, { type: mimeType });
-      console.log("Final stitched blob:", {
-        size: finalBlob.size,
-        chunks: audioChunksRef.current.length,
-        timestamp: new Date().toISOString(),
-      });
+    // capture final timestamp before stopping
+    const finalTs = startTimeRef.current || Date.now();
 
+    // stop recorder
+    mediaRecorder?.stop();
+    setMediaRecorder(null);
+    setState((s) => ({ ...s, isRecording: false, isStopping: true }));
+
+    // wait for any in-flight sendAudio
+    while (isSendingLockRef.current) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+
+    // send the stitched “all” blob once
+    if (audioChunksRef.current.length > 0) {
+      const finalType = mediaRecorder?.mimeType || getSupportedMimeType();
+      const finalBlob = new Blob(audioChunksRef.current, { type: finalType });
       await sendAudio(
         finalBlob,
-        chunkTimestampsRef.current[0] || Date.now(),
+        finalTs,
         doctorsNotesRef.current,
         genderRef.current,
         ageRef.current,
         vitalsRef.current,
         true
       );
-      await saveAudioLocally(finalBlob);
-    } else {
-      console.warn("No audio chunks for final send", new Date().toISOString());
+      await saveAudioLocally(finalBlob, finalTs);
     }
 
     setState((s) => ({ ...s, isSending: false, isStopping: false }));
-    console.log("Recording stopped", new Date().toISOString());
   }, [mediaRecorder, processAudioQueue, sendAudio, saveAudioLocally]);
 
   const clearResults = useCallback(() => {
@@ -1009,10 +987,17 @@ export default function AudioRecorder() {
       isPaused: false,
       isStopping: false,
     }));
+
+    // reset everything
     sessionIdRef.current = uuidv4();
     audioChunksRef.current = [];
-    chunkTimestampsRef.current = [];
-    audioFilenameRef.current = null;
+    audioQueueRef.current = [];
+    startTimeRef.current = 0;
+
+    if (sendIntervalRef.current !== null) {
+      clearInterval(sendIntervalRef.current);
+      sendIntervalRef.current = null;
+    }
     isSendingLockRef.current = false;
     console.log("Results cleared:", new Date().toISOString());
   }, []);
