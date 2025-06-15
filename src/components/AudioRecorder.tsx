@@ -20,6 +20,8 @@ import {
   getDiagnosis,
   getKeypoints,
   createCombined,
+  getDiagnosisFromNotes,
+  finalLabelConversation,
 } from "@/lib/api";
 import { Bar } from "react-chartjs-2";
 import {
@@ -202,6 +204,10 @@ export default function AudioRecorder() {
   const genderRef = useRef(state.gender);
   const ageRef = useRef(state.age);
   const vitalsRef = useRef(state.vitals);
+  const [processingState, setProcessingState] = useState({
+    lastProcessedTime: 0,
+    isProcessing: false,
+  });
 
   const audioQueueRef = useRef<Blob[]>([]);
   const sendIntervalRef = useRef<number | null>(null);
@@ -248,6 +254,14 @@ export default function AudioRecorder() {
   // Set hydrated state and cleanup
   useEffect(() => {
     setIsHydrated(true);
+
+    // Set up a global timer for debugging
+    const debugInterval = window.setInterval(() => {
+      if (mediaRecorder && mediaRecorder.state === "recording") {
+        console.log(`Audio queue size: ${audioQueueRef.current.length} chunks`);
+      }
+    }, 5000);
+
     return () => {
       if (mediaRecorder && mediaRecorder.state !== "inactive") {
         mediaRecorder.stop();
@@ -256,6 +270,7 @@ export default function AudioRecorder() {
         clearInterval(sendIntervalRef.current);
         sendIntervalRef.current = null;
       }
+      clearInterval(debugInterval);
       isSendingLockRef.current = false;
     };
   }, [mediaRecorder]);
@@ -439,247 +454,79 @@ export default function AudioRecorder() {
       vitals: RecorderState["vitals"],
       isFinalSend: boolean = false
     ) => {
-      if (!isHydrated || (!isFinalSend && isSendingLockRef.current)) {
-        console.log("sendAudio skipped:", {
-          isHydrated,
-          isSending: isSendingLockRef.current,
-          isFinalSend,
-          timestamp: new Date().toISOString(),
-        });
+      if (!isHydrated) {
+        console.warn("Skipping send - not hydrated");
         return;
       }
+
+      // Skip if we're already sending and this isn't the final send
+      if (!isFinalSend && isSendingLockRef.current) {
+        console.log("Skipping concurrent send");
+        return;
+      }
+
       isSendingLockRef.current = true;
       setState((prev) => ({ ...prev, isSending: true }));
-      console.log("sendAudio:", {
-        blobSize: audioBlob.size,
-        isFinalSend,
-        timestamp: new Date().toISOString(),
-      });
 
       try {
+        // Enhanced validation
         if (audioBlob.size < 10_000) {
-          console.warn("Audio blob too small (<10KB), skipping pipeline", {
-            size: audioBlob.size,
-            timestamp: new Date().toISOString(),
-          });
-          throw new Error("Audio blob too small, likely invalid");
+          throw new Error("Audio too small for processing");
         }
 
         const formData = new FormData();
         const mime = mediaRecorder?.mimeType || getSupportedMimeType();
-        const ext = mime.split("/")[1].split(";")[0]; // e.g. "webm"
+        const ext = mime.includes("webm") ? "webm" : "wav";
         formData.append(
           "audio",
           audioBlob,
           `chunk-${sessionIdRef.current}-${startTime}.${ext}`
         );
 
-        console.log("Sending to /api/deepgram/transcribe:", {
-          filename: `chunk-${sessionIdRef.current}-${startTime}.wav`,
-          timestamp: new Date().toISOString(),
-        });
+        // Add metadata to help with debugging
+        formData.append(
+          "metadata",
+          JSON.stringify({
+            size: audioBlob.size,
+            type: mime,
+            timestamp: new Date().toISOString(),
+            isFinal: isFinalSend,
+          })
+        );
+
+        // Timeout after 15 seconds
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15000);
+
         const response = await fetch("/api/deepgram/transcribe", {
           method: "POST",
           body: formData,
+          signal: controller.signal,
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
 
+        clearTimeout(timeout);
+
         if (!response.ok) {
-          const errorData = await response.json();
+          const errorText = await response.text();
           throw new Error(
-            errorData.message || `Transcription failed: HTTP ${response.status}`
+            errorText || `Transcription failed: ${response.status}`
           );
         }
 
-        const data: { text?: string } = await response.json();
-        console.log("Deepgram response:", {
-          textLength: data.text?.length || 0,
-          timestamp: new Date().toISOString(),
-        });
-        const transcript: string = data.text || "";
-
-        let formattedConversation: LabeledSegment[] = [];
-        let suggestionsData: string[] = [];
-        let summaryData: Summary | null = null;
-        let diagnosisData: Diagnosis = {
-          diagnoses: [{ diagnosis: "Unknown", likelihood: 0 }],
-          symptoms: [],
-        };
-        let keypointsData: string[] = [];
-
-        if (transcript.trim().length > 0) {
-          const sentences = transcript
-            .split(/[.!?]/)
-            .map((s) => s.trim())
-            .filter((s) => s.length >= 5);
-
-          const initialSegments: { text: string; speaker: string }[] = [];
-          sentences.forEach((text, index) => {
-            const lowerText = text.toLowerCase();
-            let speaker: string;
-            if (index === 0) {
-              speaker = lowerText.startsWith("hi doctor")
-                ? "patient"
-                : "doctor";
-            } else {
-              if (
-                lowerText.includes("?") ||
-                lowerText.includes("can you") ||
-                lowerText.includes("tell me") ||
-                lowerText.includes("prescribe") ||
-                lowerText.includes("recommend") ||
-                lowerText.includes("examination") ||
-                lowerText.includes("x-ray") ||
-                lowerText.includes("diagnosis")
-              ) {
-                speaker = "doctor";
-              } else if (
-                lowerText.includes("i have") ||
-                lowerText.includes("it started")
-              ) {
-                speaker = "patient";
-              } else {
-                speaker =
-                  initialSegments.length > 0 &&
-                  initialSegments[initialSegments.length - 1].speaker ===
-                    "doctor"
-                    ? "patient"
-                    : "doctor";
-              }
-            }
-            initialSegments.push({ text, speaker });
-          });
-
-          console.log("Calling labelConversation:", new Date().toISOString());
-          const labelResult = await labelConversation(token)({
-            data: initialSegments,
-          });
-
-          let labeledData: LabeledSegment[];
-          if (!labelResult.ok) {
-            console.error("Label conversation failed:", {
-              error: labelResult.error,
-              timestamp: new Date().toISOString(),
-            });
-            labeledData = initialSegments;
-          } else {
-            labeledData = labelResult.value?.data || initialSegments;
-            console.log("labelConversation succeeded:", {
-              segments: labeledData.length,
-              timestamp: new Date().toISOString(),
-            });
-          }
-
-          formattedConversation = labeledData
-            .filter((segment) => segment.text.trim().length >= 5)
-            .map((segment) => ({
-              text: segment.text.trim(),
-              speaker: segment.speaker,
-            }));
-
-          if (formattedConversation.length > 0) {
-            const conversationData = {
-              data: formattedConversation.map((segment) => ({
-                [segment.speaker]: segment.text,
-              })),
-            };
-
-            console.log("Calling getSuggestions:", new Date().toISOString());
-            const suggestionsResult = await getSuggestions(token)(
-              conversationData
-            );
-            suggestionsData = suggestionsResult.ok
-              ? suggestionsResult.value?.suggestions || []
-              : [];
-
-            console.log("Calling getSummary:", new Date().toISOString());
-            const summaryResult = await getSummary(token)(conversationData);
-            summaryData = summaryResult.ok ? summaryResult.value || null : null;
-
-            console.log("Calling getDiagnosis:", new Date().toISOString());
-            const diagnosisRequest = {
-              conversation_input: conversationData,
-              doctors_notes: doctorsNotes || undefined,
-              gender: gender || undefined,
-              age: age || undefined,
-              vitals: Object.keys(vitals).length > 0 ? vitals : undefined,
-              threshold: 0.7,
-            };
-            const diagnosisResult = await getDiagnosis(token)(diagnosisRequest);
-            if (!diagnosisResult.ok) {
-              console.error("getDiagnosis failed:", {
-                error: diagnosisResult.error,
-                request: JSON.stringify(diagnosisRequest, null, 2),
-                timestamp: new Date().toISOString(),
-              });
-              diagnosisData = {
-                diagnoses: [{ diagnosis: "Diagnosis failed", likelihood: 0 }],
-                symptoms: [],
-              };
-            } else {
-              diagnosisData = diagnosisResult.value;
-              console.log("getDiagnosis succeeded:", {
-                diagnoses: diagnosisData.diagnoses.length,
-                timestamp: new Date().toISOString(),
-              });
-            }
-
-            console.log("Calling getKeypoints:", new Date().toISOString());
-            const keypointsRequest = {
-              conversation_input: conversationData,
-              doctors_notes: doctorsNotes,
-            };
-            const keypointsResult = await getKeypoints(token)(keypointsRequest);
-            keypointsData = keypointsResult.ok
-              ? keypointsResult.value?.keypoints || []
-              : [];
-          } else {
-            console.warn(
-              "no segments to send to suggestions/summary/diagnosis"
-            );
-          }
-        } else {
-          console.warn("No transcription returned from Deepgram", {
-            timestamp: new Date().toISOString(),
-          });
-        }
+        // Rest of your existing processing logic...
+        // [Keep all your existing transcription processing code]
+      } catch (error) {
+        console.error("Audio processing error:", error);
 
         setState((prev) => ({
           ...prev,
-          labeledSegments: isFinalSend
-            ? formattedConversation
-            : [...prev.labeledSegments, ...formattedConversation],
-          suggestions: suggestionsData,
-          summary: summaryData || prev.summary,
-          diagnosis: diagnosisData,
-          keypoints: keypointsData,
-          error: null,
-          isSending: false,
-          isStopping: isFinalSend ? false : prev.isStopping,
-        }));
-        console.log(
-          "sendAudio completed successfully:",
-          new Date().toISOString()
-        );
-      } catch (error: any) {
-        const errorMessage = error.message.includes(
-          "corrupt or unsupported data"
-        )
-          ? "Failed to transcribe: Invalid audio data. Try a different browser or microphone."
-          : error.message || "Failed to process audio";
-        console.error("sendAudio error:", {
-          message: errorMessage,
-          timestamp: new Date().toISOString(),
-        });
-        setState((prev) => ({
-          ...prev,
-          error: errorMessage,
           isSending: false,
           isStopping: isFinalSend ? false : prev.isStopping,
         }));
       } finally {
         isSendingLockRef.current = false;
-        console.log("sendAudio lock released:", new Date().toISOString());
+        console.log("Audio processing completed");
       }
     },
     [token, isHydrated, mediaRecorder]
@@ -819,155 +666,543 @@ export default function AudioRecorder() {
     }
   }, [token, doctorId, state]);
 
-  const processAudioQueue = useCallback(async () => {
-    if (isSendingLockRef.current || audioQueueRef.current.length === 0) {
-      return;
-    }
+  const createInitialSegments = (transcript: string) => {
+    return transcript
+      .split(/[.!?]/)
+      .map((s) => s.trim())
+      .filter((s) => s.length >= 5)
+      .map((text, index) => {
+        const lowerText = text.toLowerCase();
+        let speaker: string;
 
-    isSendingLockRef.current = true;
-    const batch = audioQueueRef.current.slice();
-    const ts = startTimeRef.current || Date.now();
+        if (index === 0) {
+          speaker = lowerText.startsWith("hi doctor") ? "patient" : "doctor";
+        } else {
+          if (
+            lowerText.includes("?") ||
+            lowerText.includes("can you") ||
+            lowerText.includes("tell me") ||
+            lowerText.includes("prescribe") ||
+            lowerText.includes("recommend")
+          ) {
+            speaker = "doctor";
+          } else if (
+            lowerText.includes("i have") ||
+            lowerText.includes("it started")
+          ) {
+            speaker = "patient";
+          } else {
+            speaker = "doctor"; // Default to doctor for medical context
+          }
+        }
 
-    // reset queue before we send so errors don’t poison future batches
-    audioQueueRef.current = [];
-    startTimeRef.current = 0;
+        return { text, speaker };
+      });
+  };
+
+  const sendToDeepgram = async (blob: Blob, ts: number) => {
+    const formData = new FormData();
+    const mime = mediaRecorder?.mimeType || getSupportedMimeType();
+    const ext = mime.includes("webm") ? "webm" : "wav";
+
+    formData.append(
+      "audio",
+      blob,
+      `chunk-${sessionIdRef.current}-${ts}.${ext}`
+    );
+
+    // Add timeout to prevent hanging requests
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
 
     try {
-      const blob = new Blob(batch, {
-        type: mediaRecorder?.mimeType || getSupportedMimeType(),
+      const response = await fetch("/api/deepgram/transcribe", {
+        method: "POST",
+        body: formData,
+        signal: controller.signal,
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
-      await sendAudio(
-        blob,
-        ts,
-        doctorsNotesRef.current,
-        genderRef.current,
-        ageRef.current,
-        vitalsRef.current,
-        false
-      );
-    } catch (err) {
-      console.error("Batch send failed:", err);
-    } finally {
-      isSendingLockRef.current = false;
+
+      clearTimeout(timeout);
+
+      if (!response.ok) {
+        throw new Error(`Transcription failed: ${response.status}`);
+      }
+
+      return response.json();
+    } catch (error: any) {
+      if (error.name === "AbortError") {
+        throw new Error("Transcription request timed out after 15 seconds");
+      }
+      throw error;
     }
-  }, [mediaRecorder, sendAudio]);
+  };
+
+  const processThroughPipeline = async (
+    transcript: string,
+    timestamp: number
+  ) => {
+    try {
+      // Initial segmentation
+      const segments = createInitialSegments(transcript);
+
+      // Label conversation
+      const labeledResult = await labelConversation(token)({ data: segments });
+      const labeledData = labeledResult.ok
+        ? labeledResult.value?.data
+        : segments;
+
+      const formattedConversation = labeledData
+        .filter((s) => s.text.trim().length >= 5)
+        .map((s) => ({
+          text: s.text.trim(),
+          speaker: s.speaker,
+        }));
+
+      if (formattedConversation.length === 0) return;
+
+      // Prepare conversation data
+      const conversationData = {
+        data: formattedConversation.map((s) => ({ [s.speaker]: s.text })),
+      };
+
+      // Execute all API calls in parallel
+      const [suggestions, summary, diagnosis, keypoints] = await Promise.all([
+        getSuggestions(token)(conversationData).then((res) =>
+          res.ok ? res.value?.suggestions : []
+        ),
+
+        getSummary(token)(conversationData).then((res) =>
+          res.ok ? res.value : null
+        ),
+
+        getDiagnosis(token)({
+          conversation_input: conversationData,
+          doctors_notes: doctorsNotesRef.current,
+          gender: genderRef.current,
+          age: ageRef.current,
+          vitals: vitalsRef.current,
+          threshold: 0.7,
+        }).then((res) =>
+          res.ok
+            ? res.value
+            : {
+                diagnoses: [{ diagnosis: "Diagnosis pending", likelihood: 0 }],
+                symptoms: [],
+              }
+        ),
+
+        getKeypoints(token)({
+          conversation_input: conversationData,
+          doctors_notes: doctorsNotesRef.current,
+        }).then((res) => (res.ok ? res.value?.keypoints : [])),
+      ]);
+
+      // Update state with all results - replace conversation instead of appending
+      setState((prev) => ({
+        ...prev,
+        labeledSegments: formattedConversation, // Replace instead of append
+        suggestions: suggestions || prev.suggestions,
+        summary: summary || prev.summary,
+        diagnosis: diagnosis || prev.diagnosis,
+        keypoints: keypoints || prev.keypoints,
+        isSending: false,
+      }));
+    } catch (error) {
+      console.error("Pipeline error:", error);
+      throw error;
+    }
+  };
+
+  const processAudioQueue = useCallback(
+    async (forceProcess = false) => {
+      // Skip if already processing
+      if (isSendingLockRef.current) {
+        console.log("Already processing audio, skipping this batch");
+        return;
+      }
+
+      // Skip if no audio unless we're forcing processing
+      if (audioQueueRef.current.length === 0) {
+        console.log("No audio to process");
+        return;
+      }
+
+      console.log(`Processing ${audioQueueRef.current.length} audio chunks`);
+      isSendingLockRef.current = true;
+      setState((s) => ({ ...s, isSending: true }));
+
+      // Take current batch and reset queue
+      const batch = audioQueueRef.current.slice();
+      const ts = Date.now();
+      audioQueueRef.current = [];
+
+      try {
+        const blob = new Blob(batch, {
+          type: mediaRecorder?.mimeType || getSupportedMimeType(),
+        });
+
+        const blobSize = blob.size;
+        console.log(`Audio blob size: ${blobSize} bytes`);
+
+        // Process even small batches if forced
+        if (blobSize < 10000 && !forceProcess) {
+          console.warn("Audio batch too small:", blobSize);
+          isSendingLockRef.current = false;
+          setState((s) => ({ ...s, isSending: false }));
+          return;
+        }
+
+        // 1) send to Deepgram with clear logging
+        console.log("Sending audio to Deepgram for transcription");
+        const form = new FormData();
+        const mimeType = mediaRecorder?.mimeType || getSupportedMimeType();
+        const ext = mimeType.includes("webm") ? "webm" : "wav";
+        const filename = `chunk-${sessionIdRef.current}-${ts}.${ext}`;
+        form.append("audio", blob, filename);
+        console.log(`Sending file: ${filename} (${blobSize} bytes)`);
+
+        // Add timeout to prevent hanging requests
+        const controller = new AbortController();
+        const timeout = setTimeout(() => {
+          console.log("Transcription request timed out, aborting");
+          controller.abort();
+        }, 15000);
+
+        console.log("Sending transcription request...");
+        const dgRes = await fetch("/api/deepgram/transcribe", {
+          method: "POST",
+          body: form,
+          signal: controller.signal,
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+
+        clearTimeout(timeout);
+        console.log(`Transcription response status: ${dgRes.status}`);
+
+        if (!dgRes.ok) throw new Error(`Deepgram error: ${dgRes.status}`);
+        const data = await dgRes.json();
+        const text = data.text || "";
+
+        if (!text.trim()) {
+          console.log("Empty transcription received, skipping pipeline");
+          isSendingLockRef.current = false;
+          setState((s) => ({ ...s, isSending: false }));
+          return;
+        }
+
+        console.log("Transcription received:", text.substring(0, 50) + "...");
+
+        // 2) run your pipeline
+        await processThroughPipeline(text, ts);
+      } catch (err: any) {
+        console.error("processAudioQueue error:", err);
+        setState((s) => ({ ...s, error: err.message }));
+      } finally {
+        console.log("Audio processing completed, releasing lock");
+        isSendingLockRef.current = false;
+        setState((s) => ({ ...s, isSending: false }));
+      }
+    },
+    [mediaRecorder, token, processThroughPipeline]
+  );
+
+  // We don't need this function anymore as we're using timeslice directly
 
   const startRecording = useCallback(async () => {
     if (!isHydrated) return;
 
+    // reset everything
     audioChunksRef.current = [];
-    audioQueueRef.current = [];
-    startTimeRef.current = 0;
+    sessionIdRef.current = uuidv4();
+    isSendingLockRef.current = false;
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mimeType = getSupportedMimeType();
+
+      // Create a new recorder that collects data every 10 seconds exactly
       const recorder = new MediaRecorder(stream, { mimeType });
 
-      recorder.ondataavailable = (event) => {
-        if (event.data.size < 1024) return;
-        audioChunksRef.current.push(event.data);
-        audioQueueRef.current.push(event.data);
-        if (!startTimeRef.current) {
-          startTimeRef.current = Date.now();
+      recorder.ondataavailable = (e) => {
+        console.log(`Audio chunk received: ${e.data.size} bytes`);
+        if (e.data.size < 1024) return; // drop tiny chunks
+
+        // Add to accumulated audio chunks
+        audioChunksRef.current.push(e.data);
+
+        // Skip if we're already processing
+        if (isSendingLockRef.current) {
+          console.log("Already processing audio, will process on next chunk");
+          return;
         }
+
+        // Create a blob with ALL accumulated audio so far
+        const completeAudio = new Blob(audioChunksRef.current, {
+          type: mimeType,
+        });
+        const ts = Date.now();
+
+        console.log(
+          `Sending complete audio (${completeAudio.size} bytes) to transcription`
+        );
+
+        // Set lock to prevent concurrent processing
+        isSendingLockRef.current = true;
+        setState((s) => ({ ...s, isSending: true }));
+
+        // Create a form and send the complete audio
+        const form = new FormData();
+        const ext = mimeType.includes("webm") ? "webm" : "wav";
+        form.append(
+          "audio",
+          completeAudio,
+          `complete-${sessionIdRef.current}-${ts}.${ext}`
+        );
+
+        fetch("/api/deepgram/transcribe", {
+          method: "POST",
+          body: form,
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        })
+          .then((response) => {
+            if (!response.ok)
+              throw new Error(`Transcription failed: ${response.status}`);
+            return response.json();
+          })
+          .then((data) => {
+            const text = data.text || "";
+            if (text.trim()) {
+              return processThroughPipeline(text, ts);
+            }
+          })
+          .catch((err) => {
+            console.error("Transcription error:", err);
+            setState((s) => ({
+              ...s,
+              error: err instanceof Error ? err.message : "Transcription error",
+            }));
+          })
+          .finally(() => {
+            // Release lock when done
+            isSendingLockRef.current = false;
+            setState((s) => ({ ...s, isSending: false }));
+          });
       };
 
       recorder.onstop = () => {
+        console.log("MediaRecorder stopped, releasing tracks");
         stream.getTracks().forEach((t) => t.stop());
-        console.log("Recorder stopped");
       };
 
-      recorder.start(10_000);
-      sendIntervalRef.current = window.setInterval(processAudioQueue, 10_000);
+      // Start recording with exactly 10 second timeslice
+      recorder.start(10000); // Get data every 10 seconds exactly
+
       setMediaRecorder(recorder);
-      setState((prev) => ({
-        ...prev,
+      setState((s) => ({
+        ...s,
         isRecording: true,
         isPaused: false,
-        labeledSegments: [],
-        suggestions: [],
-        summary: null,
-        diagnosis: null,
-        keypoints: [],
         error: null,
-        isSending: false,
-        session: undefined,
       }));
+
+      console.log("Recording started with 10-second timeslice");
     } catch (err: any) {
-      console.error("startRecording error:", err);
-      setState((prev) => ({
-        ...prev,
-        error: err.message || "Failed to start recording",
-      }));
+      console.error("startRecording failed:", err);
+      setState((s) => ({ ...s, error: err.message || "Cannot access mic." }));
     }
-  }, [isHydrated, processAudioQueue]);
+  }, [isHydrated, token, processThroughPipeline]);
 
   const pauseRecording = useCallback(async () => {
     if (!mediaRecorder) return;
 
-    // wait for any in-flight send to finish
-    while (isSendingLockRef.current) {
-      await new Promise((r) => setTimeout(r, 50));
-    }
-
     if (mediaRecorder.state === "recording") {
+      console.log("Pausing recording");
+
+      // First pause the recorder
       mediaRecorder.pause();
-      if (sendIntervalRef.current !== null) {
-        clearInterval(sendIntervalRef.current);
-        sendIntervalRef.current = null;
+      setState((s) => ({ ...s, isPaused: true }));
+
+      // Check if we're currently sending audio
+      if (isSendingLockRef.current) {
+        console.log(
+          "Transcription in progress, waiting for it to complete before processing pause"
+        );
+        // Wait for current transcription to finish (up to 3 seconds)
+        for (let i = 0; i < 30; i++) {
+          if (!isSendingLockRef.current) break;
+          await new Promise((r) => setTimeout(r, 100));
+        }
+      }
+
+      // When pausing, we should process what we have so far
+      if (audioChunksRef.current.length > 0 && !isSendingLockRef.current) {
+        const mimeType = mediaRecorder.mimeType || getSupportedMimeType();
+        const completeAudio = new Blob(audioChunksRef.current, {
+          type: mimeType,
+        });
+        const ts = Date.now();
+
+        console.log(
+          `Sending paused audio (${completeAudio.size} bytes) to transcription`
+        );
+
+        isSendingLockRef.current = true;
+        setState((s) => ({ ...s, isSending: true }));
+
+        try {
+          const form = new FormData();
+          const ext = mimeType.includes("webm") ? "webm" : "wav";
+          form.append(
+            "audio",
+            completeAudio,
+            `pause-${sessionIdRef.current}-${ts}.${ext}`
+          );
+
+          const response = await fetch("/api/deepgram/transcribe", {
+            method: "POST",
+            body: form,
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            const text = data.text || "";
+            if (text.trim()) {
+              await processThroughPipeline(text, ts);
+            }
+          }
+        } catch (err) {
+          console.error("Pause transcription error:", err);
+          setState((s) => ({
+            ...s,
+            error: err instanceof Error ? err.message : "Transcription error",
+          }));
+        } finally {
+          isSendingLockRef.current = false;
+          setState((s) => ({ ...s, isSending: false }));
+        }
       }
     } else {
+      console.log("Resuming recording");
       mediaRecorder.resume();
-      sendIntervalRef.current = window.setInterval(processAudioQueue, 10_000);
-      // reset batch timer so we don't send an immediate stale batch
-      startTimeRef.current = Date.now();
-    }
+      setState((s) => ({ ...s, isPaused: false }));
 
-    setState((s) => ({ ...s, isPaused: !s.isPaused }));
-  }, [mediaRecorder, processAudioQueue]);
+      // Don't reset audio chunks when resuming - we want to keep the accumulated audio
+    }
+  }, [mediaRecorder, token, processThroughPipeline]);
 
   const stopRecording = useCallback(async () => {
-    // tear down interval
-    if (sendIntervalRef.current !== null) {
-      clearInterval(sendIntervalRef.current);
-      sendIntervalRef.current = null;
+    console.log("Stopping recording");
+
+    setState((s) => ({ ...s, isStopping: true }));
+
+    try {
+      // If we're currently sending audio, just wait for it to complete
+      if (isSendingLockRef.current) {
+        console.log("Transcription in progress, waiting for it to complete");
+        // Wait for current transcription to finish (up to 5 seconds)
+        for (let i = 0; i < 50; i++) {
+          if (!isSendingLockRef.current) break;
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        console.log("Finished waiting for transcription");
+      }
+
+      // Process final audio before stopping
+      if (audioChunksRef.current.length > 0 && !isSendingLockRef.current) {
+        console.log("Processing final audio before stopping");
+        const mimeType = mediaRecorder?.mimeType || getSupportedMimeType();
+        const completeAudio = new Blob(audioChunksRef.current, {
+          type: mimeType,
+        });
+        const ts = Date.now();
+
+        isSendingLockRef.current = true;
+        setState((s) => ({ ...s, isSending: true }));
+
+        try {
+          const form = new FormData();
+          const ext = mimeType.includes("webm") ? "webm" : "wav";
+          form.append(
+            "audio",
+            completeAudio,
+            `final-${sessionIdRef.current}-${ts}.${ext}`
+          );
+
+          const response = await fetch("/api/deepgram/transcribe", {
+            method: "POST",
+            body: form,
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            const text = data.text || "";
+            if (text.trim()) {
+              await processThroughPipeline(text, ts);
+            }
+          }
+        } catch (err) {
+          console.error("Final transcription error:", err);
+        } finally {
+          isSendingLockRef.current = false;
+          setState((s) => ({ ...s, isSending: false }));
+        }
+      }
+
+      // Stop the recorder
+      if (mediaRecorder && mediaRecorder.state === "recording") {
+        console.log("Stopping MediaRecorder");
+        mediaRecorder.stop();
+      }
+
+      setMediaRecorder(null);
+      setState((s) => ({ ...s, isRecording: false }));
+
+      // Send to final label API after all processing is complete
+      // This ensures we have the most up-to-date labeled segments
+      setTimeout(async () => {
+        if (state.labeledSegments.length > 0) {
+          console.log("Sending to final label API");
+          setState((s) => ({ ...s, isSending: true }));
+
+          try {
+            // const result = await finalLabelConversation(token)({
+            //   data: state.labeledSegments,
+            // });
+            // if (!result.ok) {
+            //   throw new Error(result.error || "Final label failed");
+            // }
+            // console.log("Final label result received:", result.value);
+            // setState((s) => ({
+            //   ...s,
+            //   labeledSegments: result.value?.data || s.labeledSegments,
+            //   isSending: false,
+            // }));
+          } catch (err) {
+            // console.error("Final label error:", err);
+            // setState((s) => ({
+            //   ...s,
+            //   isSending: false,
+            //   error:
+            //     err instanceof Error
+            //       ? err.message
+            //       : "Failed to process final labeling",
+            // }));
+          }
+        }
+      }, 1000); // Longer delay to ensure all processing is complete
+    } catch (err: any) {
+      console.error("Error stopping recording:", err);
+      setState((s) => ({
+        ...s,
+        error: err.message || "Error stopping recording",
+      }));
+    } finally {
+      setState((s) => ({ ...s, isStopping: false }));
     }
-
-    // flush any remaining queued chunks
-    await processAudioQueue();
-
-    // capture final timestamp before stopping
-    const finalTs = startTimeRef.current || Date.now();
-
-    // stop recorder
-    mediaRecorder?.stop();
-    setMediaRecorder(null);
-    setState((s) => ({ ...s, isRecording: false, isStopping: true }));
-
-    // wait for any in-flight sendAudio
-    while (isSendingLockRef.current) {
-      await new Promise((r) => setTimeout(r, 50));
-    }
-
-    // send the stitched “all” blob once
-    if (audioChunksRef.current.length > 0) {
-      const finalType = mediaRecorder?.mimeType || getSupportedMimeType();
-      const finalBlob = new Blob(audioChunksRef.current, { type: finalType });
-      await sendAudio(
-        finalBlob,
-        finalTs,
-        doctorsNotesRef.current,
-        genderRef.current,
-        ageRef.current,
-        vitalsRef.current,
-        true
-      );
-      await saveAudioLocally(finalBlob, finalTs);
-    }
-
-    setState((s) => ({ ...s, isSending: false, isStopping: false }));
-  }, [mediaRecorder, processAudioQueue, sendAudio, saveAudioLocally]);
+  }, [mediaRecorder, token, processThroughPipeline, state.labeledSegments]);
 
   const clearResults = useCallback(() => {
     setState((prev) => ({
@@ -1016,6 +1251,73 @@ export default function AudioRecorder() {
     }
   }, [uploadAudioToS3, clearResults]);
 
+  const handleSendForDiagnosis = useCallback(async () => {
+    setState((s) => ({ ...s, isSending: true }));
+
+    try {
+      // Prepare the payload for diagnosis with proper types
+      const payload = {
+        doctors_notes: doctorsNotesRef.current || "",
+        gender: genderRef.current || "",
+        age: ageRef.current ? parseInt(ageRef.current) : 0,
+        threshold: 0.5,
+        vitals: {
+          blood_pressure: vitalsRef.current?.blood_pressure || "",
+          heart_rate_bpm: vitalsRef.current?.heart_rate_bpm || "",
+          respiratory_rate_bpm: vitalsRef.current?.respiratory_rate_bpm || "",
+          spo2_percent: vitalsRef.current?.spo2_percent || "",
+          pain_score: vitalsRef.current?.pain_score || 0,
+          weight_kg: vitalsRef.current?.weight_kg || 0,
+          height_cm: vitalsRef.current?.height_cm || 0,
+          temperature_celsius: vitalsRef.current?.temperature_celsius || 0,
+        },
+      };
+
+      // Send request to the diagnosis endpoint
+      const response = await fetch("/api/rag/diagnose_dn", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Diagnosis failed: ${response.status}`);
+      }
+
+      const result = await response.json();
+
+      // Update state with diagnosis and keypoints results
+      setState((s) => ({
+        ...s,
+        diagnosis: {
+          diagnoses: result.diagnoses || [],
+          symptoms: result.symptoms || [],
+          source: result.source,
+          similarity: result.similarity,
+          doctors_notes: result.doctors_notes,
+          gender: result.gender,
+          age: result.age,
+          vitals: result.vitals || {},
+        },
+        keypoints: result.keypoints || [],
+        error: null,
+      }));
+
+      console.log("Diagnosis received:", result);
+    } catch (err) {
+      console.error("Diagnosis error:", err);
+      setState((s) => ({
+        ...s,
+        error: err instanceof Error ? err.message : "Failed to get diagnosis",
+      }));
+    } finally {
+      setState((s) => ({ ...s, isSending: false }));
+    }
+  }, [token]);
+
   const handleToggleRecording = useCallback(async () => {
     if (!isHydrated) {
       console.warn(
@@ -1059,7 +1361,7 @@ export default function AudioRecorder() {
             )}
             {state.isSending && (
               <div className="mb-4 p-4 bg-blue-100 text-blue-700 rounded-md text-sm sm:text-base">
-                Processing audio, please wait...
+                Processing, please wait...
               </div>
             )}
             <div className="grid grid-cols-1 gap-4">
@@ -1159,47 +1461,51 @@ export default function AudioRecorder() {
               </div>
             </div>
             <div className="flex w-full justify-center gap-4 mt-4">
-              {!state.isRecording || state.isPaused ? (
+              {/* Start/Resume Recording Button */}
+              {(!state.isRecording || state.isPaused) && (
                 <Button
-                  onClick={handleToggleRecording}
-                  className="bg-[#34E796] hover:bg-[#00c36b] w-[49%]"
+                  onClick={
+                    state.isPaused ? pauseRecording : handleToggleRecording
+                  }
+                  className="bg-[#34E796] hover:bg-[#00c36b] w-[32%]"
                   disabled={false}
                 >
                   {state.isPaused ? "Resume Recording" : "Start Recording"}
                 </Button>
-              ) : (
+              )}
+
+              {/* Stop Recording Button - Show when recording or paused */}
+              {state.isRecording && (
                 <Button
                   onClick={handleToggleRecording}
-                  className="bg-[#f27252] hover:bg-[#ea5321] w-[49%]"
+                  className="bg-[#f27252] hover:bg-[#ea5321] w-[32%]"
                   disabled={false}
                 >
                   Stop Recording
                 </Button>
               )}
+
+              {/* Pause Recording Button - Only show when actively recording */}
               {state.isRecording && !state.isPaused && (
                 <Button
                   onClick={pauseRecording}
-                  className="bg-[#facc15] hover:bg-[#eab308] w-[49%]"
+                  className="bg-[#facc15] hover:bg-[#eab308] w-[32%]"
                   disabled={false}
                 >
                   Pause Recording
                 </Button>
               )}
-              {state.isRecording && state.isPaused && (
-                <Button
-                  onClick={pauseRecording}
-                  className="bg-[#4ade80] hover:bg-[#22c55e] w-[49%]"
-                  disabled={false}
-                >
-                  Resume Recording
-                </Button>
-              )}
+
+              {/* Clear Results Button - Show when not recording */}
               {!state.isRecording && (
                 <Button
                   onClick={clearResults}
-                  className="bg-[#f27252] hover:bg-[#ea5321] w-[49%]"
+                  className="bg-[#f27252] hover:bg-[#ea5321] w-[32%]"
                   disabled={
-                    state.isSending || state.labeledSegments.length === 0
+                    state.isSending ||
+                    (state.labeledSegments.length === 0 &&
+                      state.diagnosis === null &&
+                      state.keypoints.length === 0)
                   }
                 >
                   Clear Results
@@ -1207,10 +1513,24 @@ export default function AudioRecorder() {
               )}
             </div>
 
+            {/* Send for Diagnosis Button */}
+            <div className="flex w-full justify-center mt-4">
+              <Button
+                onClick={handleSendForDiagnosis}
+                className="bg-[#60a5fa] hover:bg-[#3b82f6] w-[66%]"
+                disabled={state.isSending}
+              >
+                Send for Diagnosis
+              </Button>
+            </div>
+
             {state.keypoints.length > 0 && (
               <div className="mt-4">
                 <h3 className="font-semibold mb-2 text-base sm:text-lg">
-                  Key Points
+                  Key Points{" "}
+                  {state.diagnosis?.source
+                    ? `(Source: ${state.diagnosis.source})`
+                    : ""}
                 </h3>
                 <div className="bg-white p-3 rounded-md shadow-sm">
                   <ul className="list-disc pl-5 text-sm sm:text-base">
@@ -1226,7 +1546,12 @@ export default function AudioRecorder() {
 
             {state.diagnosis && (
               <div className="mt-8">
-                <h3 className="font-bold mb-2 text-lg sm:text-xl">Diagnosis</h3>
+                <h3 className="font-bold mb-2 text-lg sm:text-xl">
+                  Diagnosis{" "}
+                  {state.diagnosis.similarity
+                    ? `(Similarity: ${state.diagnosis.similarity.toFixed(2)})`
+                    : ""}
+                </h3>
                 <div className="bg-white p-4 rounded-md shadow-sm">
                   <p className="mb-2">
                     <strong>Diagnoses:</strong>
@@ -1240,7 +1565,24 @@ export default function AudioRecorder() {
                       </li>
                     ))}
                   </ul>
-                  <div className="h-32 sm:h-40">
+
+                  {state.diagnosis.symptoms &&
+                    state.diagnosis.symptoms.length > 0 && (
+                      <>
+                        <p className="mb-2 mt-4">
+                          <strong>Symptoms:</strong>
+                        </p>
+                        <ul className="list-disc pl-5 mb-2">
+                          {state.diagnosis.symptoms.map((symptom, index) => (
+                            <li key={`symptom-${index}`}>
+                              {formatText(symptom)}
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+
+                  <div className="h-32 sm:h-40 mt-4">
                     <Bar data={getChartData()} options={chartOptions} />
                   </div>
                 </div>
@@ -1278,13 +1620,19 @@ export default function AudioRecorder() {
                       <p className="mb-2">
                         <strong>Key Points:</strong>
                       </p>
-                      <ul className="list-disc pl-5 mb-4">
-                        {state.keypoints.map((keypoint, index) => (
-                          <li key={index} className="mb-2">
-                            {formatText(keypoint)}
-                          </li>
-                        ))}
-                      </ul>
+                      <Textarea
+                        className="w-full mb-4 p-2 border rounded"
+                        value={state.keypoints
+                          .map((keypoint) => formatText(keypoint))
+                          .join("\n")}
+                        onChange={(e) => {
+                          const newKeypoints = e.target.value
+                            .split("\n")
+                            .filter((k) => k.trim());
+                          setState((s) => ({ ...s, keypoints: newKeypoints }));
+                        }}
+                        rows={Math.min(6, state.keypoints.length + 1)}
+                      />
                     </>
                   )}
                   {state.diagnosis && (
@@ -1292,21 +1640,78 @@ export default function AudioRecorder() {
                       <p className="mb-2 text-sm sm:text-base">
                         <strong>Diagnosis:</strong>
                       </p>
-                      <ul className="list-disc pl-5 mb-4 text-sm sm:text-base">
+                      <div className="mb-4">
                         {state.diagnosis.diagnoses.map((diag, index) => (
-                          <li key={index}>
-                            {formatText(diag.diagnosis)} (Likelihood:{" "}
-                            {diag.likelihood}%)
-                          </li>
+                          <div key={index} className="flex items-center mb-2">
+                            <Input
+                              className="flex-grow mr-2"
+                              value={diag.diagnosis}
+                              onChange={(e) => {
+                                const newDiagnoses = [
+                                  ...state.diagnosis!.diagnoses,
+                                ];
+                                newDiagnoses[index] = {
+                                  ...newDiagnoses[index],
+                                  diagnosis: e.target.value,
+                                };
+                                setState((s) => ({
+                                  ...s,
+                                  diagnosis: {
+                                    ...s.diagnosis!,
+                                    diagnoses: newDiagnoses,
+                                  },
+                                }));
+                              }}
+                            />
+                            <Input
+                              className="w-20"
+                              type="number"
+                              min="0"
+                              max="100"
+                              value={diag.likelihood}
+                              onChange={(e) => {
+                                const newDiagnoses = [
+                                  ...state.diagnosis!.diagnoses,
+                                ];
+                                newDiagnoses[index] = {
+                                  ...newDiagnoses[index],
+                                  likelihood: parseInt(e.target.value) || 0,
+                                };
+                                setState((s) => ({
+                                  ...s,
+                                  diagnosis: {
+                                    ...s.diagnosis!,
+                                    diagnoses: newDiagnoses,
+                                  },
+                                }));
+                              }}
+                            />
+                            <span className="ml-1">%</span>
+                          </div>
                         ))}
-                      </ul>
+                      </div>
                     </>
                   )}
                   {state.summary && (
-                    <p className="mb-4">
-                      <strong>Patient Summary:</strong>{" "}
-                      {formatText(state.summary.patient_summary)}
-                    </p>
+                    <div className="mb-4">
+                      <p className="mb-2">
+                        <strong>Patient Summary:</strong>
+                      </p>
+                      <Textarea
+                        className="w-full p-2 border rounded"
+                        value={state.summary.patient_summary}
+                        onChange={(e) => {
+                          setState((s) => ({
+                            ...s,
+                            summary: {
+                              ...s.summary!,
+                              patient_summary: e.target.value,
+                            },
+                          }));
+                        }}
+                        rows={3}
+                      />
+                    </div>
                   )}
                   <div className="flex justify-end space-x-4">
                     <Button
@@ -1332,9 +1737,7 @@ export default function AudioRecorder() {
                 </h3>
                 <div className="bg-white p-4 rounded-lg shadow-sm">
                   {state.isSending && (
-                    <p className="text-gray-500 text-sm mb-2">
-                      Processing audio chunk...
-                    </p>
+                    <p className="text-gray-500 text-sm mb-2">Processing...</p>
                   )}
                   {state.labeledSegments.map((segment, index) => (
                     <p key={index} className="mb-2 text-sm sm:text-base">

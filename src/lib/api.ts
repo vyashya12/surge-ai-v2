@@ -404,10 +404,16 @@ export const getDiagnosis =
     data: DiagnosisRequest
   ): Promise<Result<DiagnosisResponse, string>> => {
     try {
+      // Ensure age is properly formatted for the API
+      const requestData = {
+        ...data,
+        age: data.age && data.age.trim() !== "" ? data.age : undefined
+      };
+      
       const client = createApiClient(token);
       const response = await client.post<DiagnosisResponse>(
         "/rag/diagnose",
-        data
+        requestData
       );
       return response;
     } catch (error: unknown) {
@@ -558,6 +564,108 @@ export const getSummaryById =
       return {
         ok: false,
         error: appError.message || "Failed to fetch summary",
+      };
+    }
+  };
+
+interface DiagnoseDnRequest {
+  doctors_notes: string;
+  threshold?: number;
+  gender?: string;
+  age?: number;
+  vitals?: {
+    blood_pressure?: string;
+    heart_rate_bpm?: string;
+    respiratory_rate_bpm?: string;
+    spo2_percent?: string;
+    pain_score?: number;
+    weight_kg?: number;
+    height_cm?: number;
+    temperature_celsius?: number;
+  };
+}
+
+interface DiagnoseDnResponse {
+  diagnoses: Array<{ diagnosis: string; likelihood: number }>;
+  symptoms: string[];
+  keypoints: string[];
+  source?: string;
+  similarity?: number;
+  doctors_notes?: string;
+  gender?: string;
+  age?: number;
+  vitals?: {
+    blood_pressure?: string;
+    heart_rate_bpm?: string;
+    respiratory_rate_bpm?: string;
+    spo2_percent?: string;
+    pain_score?: number;
+    weight_kg?: number;
+    height_cm?: number;
+    temperature_celsius?: number;
+  };
+}
+
+export const getDiagnosisFromNotes =
+  (token: string | null) =>
+  async (
+    data: DiagnoseDnRequest
+  ): Promise<Result<DiagnoseDnResponse, string>> => {
+    try {
+      // Ensure threshold is always provided
+      const requestData = {
+        ...data,
+        threshold: data.threshold ?? 0.5,
+      };
+
+      const client = createApiClient(token);
+      const response = await client.post<DiagnoseDnResponse>(
+        "/rag/diagnose_dn",
+        requestData
+      );
+      return response;
+    } catch (error: unknown) {
+      const appError = error as AppError;
+      console.error("getDiagnosisFromNotes fetch error:", appError);
+      return {
+        ok: false,
+        error: appError.message || "Failed to fetch diagnosis from notes",
+      };
+    }
+  };
+
+interface LabelConversationRequest {
+  data: Array<{
+    text: string;
+    speaker: string;
+  }>;
+}
+
+interface LabelConversationResponse {
+  data: Array<{
+    text: string;
+    speaker: string;
+  }>;
+}
+
+export const finalLabelConversation =
+  (token: string | null) =>
+  async (
+    data: LabelConversationRequest
+  ): Promise<Result<LabelConversationResponse, string>> => {
+    try {
+      const client = createApiClient(token);
+      const response = await client.post<LabelConversationResponse>(
+        "/final_label",
+        data
+      );
+      return response;
+    } catch (error: unknown) {
+      const appError = error as AppError;
+      console.error("finalLabelConversation fetch error:", appError);
+      return {
+        ok: false,
+        error: appError.message || "Failed to label conversation",
       };
     }
   };

@@ -2,38 +2,41 @@ import { NextRequest, NextResponse } from "next/server";
 import axios from "axios";
 import { v4 as uuidv4 } from "uuid";
 
-interface DiagnoseRequest {
-  conversation_input: { data: Array<{ doctor?: string; patient?: string }> };
-  doctors_notes?: string;
+interface DiagnoseDnRequest {
+  doctors_notes: string;
+  threshold?: number;
   gender?: string;
-  age?: string;
+  age?: number;
   vitals?: {
     blood_pressure?: string;
     heart_rate_bpm?: string;
+    respiratory_rate_bpm?: string;
+    spo2_percent?: string;
     pain_score?: number;
     weight_kg?: number;
     height_cm?: number;
+    temperature_celsius?: number;
   };
-  threshold?: number;
 }
 
-interface DiagnoseResponse {
+interface DiagnoseDnResponse {
   diagnoses: Array<{ diagnosis: string; likelihood: number }>;
   symptoms: string[];
+  keypoints: string[];
   source?: string;
   similarity?: number;
   doctors_notes?: string;
   gender?: string;
-  age?: string | number;
+  age?: number;
   vitals?: {
     blood_pressure?: string;
     heart_rate_bpm?: string;
-    respiratory_rate_bpm?: string | null;
-    spo2_percent?: string | null;
+    respiratory_rate_bpm?: string;
+    spo2_percent?: string;
     pain_score?: number;
     weight_kg?: number;
     height_cm?: number;
-    temperature_celsius?: number | null;
+    temperature_celsius?: number;
   };
 }
 
@@ -73,7 +76,9 @@ export async function POST(request: NextRequest) {
   };
 
   try {
-    logger.info("Processing diagnosis request", { url: request.url });
+    logger.info("Processing doctor's notes diagnosis request", {
+      url: request.url,
+    });
 
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL;
     if (!backendUrl) {
@@ -102,40 +107,20 @@ export async function POST(request: NextRequest) {
       token: token.slice(0, 10) + "...",
     });
 
-    const body: DiagnoseRequest = await request.json();
+    const body: DiagnoseDnRequest = await request.json();
     logger.info("Received request body", {
       body: JSON.stringify(body, null, 2),
     });
 
-    if (
-      !body.conversation_input?.data ||
-      !Array.isArray(body.conversation_input.data)
-    ) {
+    if (!body.doctors_notes || typeof body.doctors_notes !== "string") {
       logger.error("Invalid request body", {
-        error: "conversation_input.data is missing or not an array",
+        error: "doctors_notes is missing or not a string",
         body: JSON.stringify(body, null, 2),
       });
       return NextResponse.json(
         {
           message:
-            "Invalid request body: conversation_input.data is missing or not an array",
-          requestId,
-        },
-        { status: 400 }
-      );
-    }
-
-    const isValid = body.conversation_input.data.every(
-      (segment) => "doctor" in segment || "patient" in segment
-    );
-    if (!isValid) {
-      logger.error("Invalid segment structure in request body", {
-        data: JSON.stringify(body.conversation_input.data, null, 2),
-      });
-      return NextResponse.json(
-        {
-          message:
-            "Invalid segment structure: each segment must have a doctor or patient string",
+            "Invalid request body: doctors_notes is required and must be a string",
           requestId,
         },
         { status: 400 }
@@ -155,24 +140,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const validatedBody: DiagnoseRequest = {
-      ...body,
+    const validatedBody: DiagnoseDnRequest = {
+      doctors_notes: body.doctors_notes,
+      threshold: body.threshold,
+      gender: body.gender,
+      age: body.age,
       vitals: body.vitals ?? undefined,
     };
-    logger.info("Request body validated successfully", {
-      segmentCount: body.conversation_input.data.length,
-    });
+    logger.info("Request body validated successfully");
 
     logger.info("Sending request to backend", {
-      backendUrl: `${backendUrl}/rag/diagnose`,
+      backendUrl: `${backendUrl}/rag/diagnose_dn`,
     });
-    const response = await axios.post<DiagnoseResponse>(
-      `${backendUrl}/rag/diagnose`,
+    const response = await axios.post<DiagnoseDnResponse>(
+      `${backendUrl}/rag/diagnose_dn`,
       validatedBody,
       {
         headers: {
           "Content-Type": "application/json",
-          Authorization: `${token}`,
+          Authorization: `Bearer ${token}`,
           "X-Request-ID": requestId,
         },
         timeout: 60000,
@@ -193,7 +179,7 @@ export async function POST(request: NextRequest) {
         status,
         message,
         responseData: JSON.stringify(responseData, null, 2),
-        requestUrl: `${process.env.NEXT_PUBLIC_BACKEND_API_URL}/rag/diagnose`,
+        requestUrl: `${process.env.NEXT_PUBLIC_BACKEND_API_URL}/rag_diagnose_dn`,
         requestBody: JSON.stringify(
           await request.json().catch(() => null),
           null,
