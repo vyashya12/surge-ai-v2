@@ -1085,12 +1085,25 @@ export default function AudioRecorder() {
       }
     } else {
       console.log("Resuming recording");
-      mediaRecorder.resume();
-      setState((s) => ({ ...s, isPaused: false }));
-
+      try {
+        mediaRecorder.resume();
+        setState((s) => ({ ...s, isPaused: false }));
+      } catch (err) {
+        console.error("Error resuming recording:", err);
+        // If resume fails, reset the recorder
+        if (mediaRecorder.state !== "inactive") {
+          try {
+            mediaRecorder.stop();
+          } catch (stopErr) {
+            console.error("Error stopping recorder after resume failure:", stopErr);
+          }
+        }
+        // Start a new recording session
+        startRecording();
+      }
       // Don't reset audio chunks when resuming - we want to keep the accumulated audio
     }
-  }, [mediaRecorder, token, processThroughPipeline]);
+  }, [mediaRecorder, token, processThroughPipeline, startRecording]);
 
   const stopRecording = useCallback(async () => {
     console.log("Stopping recording");
@@ -1238,18 +1251,34 @@ export default function AudioRecorder() {
   }, []);
 
   const handleAccept = useCallback(async () => {
+    // First save audio locally if not already saved
+    if (!audioFilenameRef.current) {
+      const mimeType = mediaRecorder?.mimeType || getSupportedMimeType();
+      const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+      await saveAudioLocally(audioBlob);
+    }
+    
+    // Then upload to S3 and create combined record
     const success = await uploadAudioToS3();
     if (success) {
       clearResults();
     }
-  }, [uploadAudioToS3, clearResults]);
+  }, [uploadAudioToS3, clearResults, saveAudioLocally, mediaRecorder]);
 
   const handleReject = useCallback(async () => {
+    // First save audio locally if not already saved
+    if (!audioFilenameRef.current) {
+      const mimeType = mediaRecorder?.mimeType || getSupportedMimeType();
+      const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+      await saveAudioLocally(audioBlob);
+    }
+    
+    // Then upload to S3 and create combined record
     const success = await uploadAudioToS3();
     if (success) {
       clearResults();
     }
-  }, [uploadAudioToS3, clearResults]);
+  }, [uploadAudioToS3, clearResults, saveAudioLocally, mediaRecorder]);
 
   const handleSendForDiagnosis = useCallback(async () => {
     setState((s) => ({ ...s, isSending: true }));
@@ -1327,7 +1356,63 @@ export default function AudioRecorder() {
       return;
     }
     if (state.isRecording && !state.isPaused) {
-      await stopRecording();
+      // Immediately update UI to show recording has stopped
+      if (mediaRecorder && mediaRecorder.state === "recording") {
+        mediaRecorder.stop();
+      }
+      setMediaRecorder(null);
+      setState((s) => ({ ...s, isRecording: false }));
+      
+      // Process audio in the background
+      console.log("Processing audio in background after stopping recording");
+      
+      // Run the rest of the stop recording logic in the background
+      setTimeout(() => {
+        // Process final audio if needed
+        if (audioChunksRef.current.length > 0 && !isSendingLockRef.current) {
+          const mimeType = getSupportedMimeType();
+          const completeAudio = new Blob(audioChunksRef.current, {
+            type: mimeType,
+          });
+          const ts = Date.now();
+          
+          isSendingLockRef.current = true;
+          setState((s) => ({ ...s, isSending: true }));
+          
+          const form = new FormData();
+          const ext = mimeType.includes("webm") ? "webm" : "wav";
+          form.append(
+            "audio",
+            completeAudio,
+            `final-${sessionIdRef.current}-${ts}.${ext}`
+          );
+          
+          fetch("/api/deepgram/transcribe", {
+            method: "POST",
+            body: form,
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          })
+            .then((response) => {
+              if (!response.ok) throw new Error(`Transcription failed: ${response.status}`);
+              return response.json();
+            })
+            .then((data) => {
+              const text = data.text || "";
+              if (text.trim()) {
+                return processThroughPipeline(text, ts);
+              }
+            })
+            .catch((err) => {
+              console.error("Final transcription error:", err);
+            })
+            .finally(() => {
+              isSendingLockRef.current = false;
+              setState((s) => ({ ...s, isSending: false, isStopping: false }));
+            });
+        } else {
+          setState((s) => ({ ...s, isStopping: false }));
+        }
+      }, 100);
     } else {
       await startRecording();
     }
@@ -1336,7 +1421,9 @@ export default function AudioRecorder() {
     state.isRecording,
     state.isPaused,
     startRecording,
-    stopRecording,
+    mediaRecorder,
+    token,
+    processThroughPipeline,
   ]);
 
   if (!isHydrated) {
