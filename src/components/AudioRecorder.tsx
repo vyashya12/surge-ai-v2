@@ -80,7 +80,7 @@ interface Diagnosis {
   similarity?: number;
   doctors_notes?: string;
   gender?: string;
-  age?: string;
+  age?: number | null;
   vitals?: {
     blood_pressure?: string;
     heart_rate_bpm?: string;
@@ -99,7 +99,7 @@ interface CombinedCreateRequest {
   patient_summary?: string;
   doctor_summary?: string;
   notes_summary?: string;
-  diagnosis: Array<{ diagnosis: string; likelihood: number }>;
+  diagnosis?: Array<{ diagnosis: string; likelihood: number }>; // Made optional
   data_json?: {
     data?: Array<{ [speaker: string]: string }>;
     patient_summary?: string;
@@ -108,7 +108,7 @@ interface CombinedCreateRequest {
     diagnoses?: Array<{ diagnosis: string; likelihood: number }>;
     symptoms?: string[];
     gender?: string;
-    age?: string;
+    age?: number | null;
     vitals?: {
       blood_pressure?: string;
       heart_rate_bpm?: string;
@@ -121,9 +121,9 @@ interface CombinedCreateRequest {
     };
   };
   audio_url?: string;
-  conversation: string;
+  conversation?: string; // Made optional
   gender?: string;
-  age?: string;
+  age?: number | null;
   vitals?: {
     blood_pressure?: string;
     heart_rate_bpm?: string;
@@ -137,13 +137,23 @@ interface CombinedCreateRequest {
 }
 
 interface CombinedCreateResponse {
-  session_id: string;
-  summary_id: string;
-  diagnosis_validation_id: string;
-  gender: string;
-  age: string;
+  session_id?: string; // Made optional
+  summary_id?: string; // Made optional
+  diagnosis_validation_id?: string; // Made optional
+  gender?: string; // Made optional
+  age?: number | null; // Made optional
   status?: number;
   message?: string;
+  vitals?: {
+    blood_pressure?: string;
+    heart_rate_bpm?: string;
+    respiratory_rate_bpm?: string;
+    spo2_percent?: string;
+    pain_score?: number;
+    weight_kg?: number;
+    height_cm?: number;
+    temperature_celsius?: number;
+  };
 }
 
 type RecorderState = {
@@ -532,14 +542,54 @@ export default function AudioRecorder() {
     [token, isHydrated, mediaRecorder]
   );
 
-  const uploadAudioToS3 = useCallback(async () => {
-    if (!audioFilenameRef.current) {
+  // Function to create a combined record with empty/default values when there's no audio
+  const createEmptyCombinedRecord = useCallback(async () => {
+    setState((prev) => ({ ...prev, isSending: true }));
+    try {
+      // Create a minimal valid payload - only include required fields
+      const payload: CombinedCreateRequest = {
+        session_id: sessionIdRef.current,
+        doctor_id: doctorId || "",
+        age: null,
+        data_json: {
+          data: [],
+          diagnoses: [],
+          symptoms: [],
+          age: null,
+        },
+        diagnosis: [],
+        audio_url: "",
+        conversation: "",
+      };
+
+      const createResult = await createCombined(token)(payload);
+      if (!createResult.ok) {
+        throw new Error(
+          createResult.error || "Failed to create combined record"
+        );
+      }
+
       setState((prev) => ({
         ...prev,
-        error: "No audio file to upload",
+        isSending: false,
+        error: null,
+      }));
+      return true;
+    } catch (error: any) {
+      console.error("Error creating empty combined record:", error);
+      setState((prev) => ({
+        ...prev,
+        error: error.message || "Failed to create record. Please try again.",
         isSending: false,
       }));
       return false;
+    }
+  }, [token, doctorId, state, createCombined]);
+
+  const uploadAudioToS3 = useCallback(async () => {
+    if (!audioFilenameRef.current) {
+      // Just return success if there's no audio file
+      return true;
     }
 
     setState((prev) => ({ ...prev, isSending: true }));
@@ -586,35 +636,65 @@ export default function AudioRecorder() {
         throw new Error("No audio URL returned from S3 upload");
       }
 
-      const conversationText = state.labeledSegments
-        .map((seg) => `${seg.speaker}: ${seg.text}`)
-        .join("\n");
+      // Ensure we have a valid conversation text even if segments are empty
+      const conversationText =
+        state.labeledSegments.length > 0
+          ? state.labeledSegments
+              .map((seg) => `${seg.speaker}: ${seg.text}`)
+              .join("\n")
+          : ""; // Empty string if no segments
+
+      // Create a payload with all fields explicitly set to empty values if they don't exist
       const payload: CombinedCreateRequest = {
         session_id: sessionIdRef.current,
-        doctor_id: doctorId || undefined,
-        patient_summary: state.summary?.patient_summary,
-        doctor_summary: state.summary?.doctor_summary,
-        notes_summary: state.doctorsNotes,
+        doctor_id: doctorId || "",
+        patient_summary: state.summary?.patient_summary || "",
+        doctor_summary: state.summary?.doctor_summary || "",
+        notes_summary: state.doctorsNotes || "",
+        // Always provide an array for diagnosis, even if empty
         diagnosis: state.diagnosis?.diagnoses || [],
         data_json: {
-          data: state.labeledSegments.map((segment) => ({
-            [segment.speaker]: segment.text,
-          })),
-          patient_summary: state.summary?.patient_summary,
-          doctor_summary: state.summary?.doctor_summary,
-          doctor_note_summary: state.doctorsNotes,
-          diagnoses: state.diagnosis?.diagnoses,
-          symptoms: state.diagnosis?.symptoms,
-          gender: state.gender,
-          age: state.age,
-          vitals:
-            Object.keys(state.vitals).length > 0 ? state.vitals : undefined,
+          // Handle empty segments case
+          data:
+            state.labeledSegments.length > 0
+              ? state.labeledSegments.map((segment) => ({
+                  [segment.speaker]: segment.text,
+                }))
+              : [],
+          patient_summary: state.summary?.patient_summary || "",
+          doctor_summary: state.summary?.doctor_summary || "",
+          doctor_note_summary: state.doctorsNotes || "",
+          diagnoses: state.diagnosis?.diagnoses || [],
+          symptoms: state.diagnosis?.symptoms || [],
+          gender: state.gender || "",
+          // Fix: Ensure age is an integer (0 if empty)
+          age: state.age ? parseInt(state.age) : null,
+          vitals: {
+            blood_pressure: state.vitals?.blood_pressure || "",
+            heart_rate_bpm: state.vitals?.heart_rate_bpm || "",
+            respiratory_rate_bpm: state.vitals?.respiratory_rate_bpm || "",
+            spo2_percent: state.vitals?.spo2_percent || "",
+            pain_score: state.vitals?.pain_score || 0,
+            weight_kg: state.vitals?.weight_kg || 0,
+            height_cm: state.vitals?.height_cm || 0,
+            temperature_celsius: state.vitals?.temperature_celsius || 0,
+          },
         },
-        audio_url: audioUrl,
+        audio_url: audioUrl || "",
         conversation: conversationText,
-        gender: state.gender,
-        age: state.age,
-        vitals: Object.keys(state.vitals).length > 0 ? state.vitals : undefined,
+        gender: state.gender || "",
+        // Fix: Ensure age is an integer (0 if empty)
+        age: state.age ? parseInt(state.age) : null,
+        vitals: {
+          blood_pressure: state.vitals?.blood_pressure || "",
+          heart_rate_bpm: state.vitals?.heart_rate_bpm || "",
+          respiratory_rate_bpm: state.vitals?.respiratory_rate_bpm || "",
+          spo2_percent: state.vitals?.spo2_percent || "",
+          pain_score: state.vitals?.pain_score || 0,
+          weight_kg: state.vitals?.weight_kg || 0,
+          height_cm: state.vitals?.height_cm || 0,
+          temperature_celsius: state.vitals?.temperature_celsius || 0,
+        },
       };
 
       const createResult = await createCombined(token)(payload);
@@ -664,7 +744,7 @@ export default function AudioRecorder() {
       }));
       return false;
     }
-  }, [token, doctorId, state]);
+  }, [token, doctorId, state, createCombined]);
 
   const createInitialSegments = (transcript: string) => {
     return transcript
@@ -780,7 +860,7 @@ export default function AudioRecorder() {
           conversation_input: conversationData,
           doctors_notes: doctorsNotesRef.current,
           gender: genderRef.current,
-          age: ageRef.current,
+          age: ageRef.current ? parseInt(ageRef.current) : null,
           vitals: vitalsRef.current,
           threshold: 0.7,
         }).then((res) =>
@@ -1095,7 +1175,10 @@ export default function AudioRecorder() {
           try {
             mediaRecorder.stop();
           } catch (stopErr) {
-            console.error("Error stopping recorder after resume failure:", stopErr);
+            console.error(
+              "Error stopping recorder after resume failure:",
+              stopErr
+            );
           }
         }
         // Start a new recording session
@@ -1251,34 +1334,177 @@ export default function AudioRecorder() {
   }, []);
 
   const handleAccept = useCallback(async () => {
-    // First save audio locally if not already saved
-    if (!audioFilenameRef.current) {
-      const mimeType = mediaRecorder?.mimeType || getSupportedMimeType();
-      const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
-      await saveAudioLocally(audioBlob);
+    try {
+      // If there's no audio at all, just create a minimal record
+      if (audioChunksRef.current.length === 0 && !audioFilenameRef.current) {
+        // Create a minimal valid payload directly
+        setState((prev) => ({ ...prev, isSending: true }));
+
+        try {
+          // Create a minimal valid payload with only required fields
+          const payload = {
+            session_id: sessionIdRef.current,
+            doctor_id: doctorId || "",
+            // Include minimal data to avoid validation errors
+            diagnosis: [],
+            // Fix: Use null for age instead of 0
+            age: null,
+            data_json: {
+              data: [],
+              diagnoses: [],
+              symptoms: [],
+              // Fix: Use null for age instead of 0
+              age: null,
+            },
+            vitals: {
+              pain_score: 0,
+              weight_kg: 0,
+              height_cm: 0,
+              temperature_celsius: 0,
+            },
+          };
+
+          console.log("Creating minimal record:", JSON.stringify(payload));
+
+          const createResult = await createCombined(token)(payload);
+          if (!createResult.ok) {
+            console.error(
+              "Failed to create minimal record:",
+              createResult.error
+            );
+            throw new Error(createResult.error || "Failed to create record");
+          }
+
+          clearResults();
+          return;
+        } catch (err) {
+          console.error("Error creating minimal record:", err);
+          throw err;
+        } finally {
+          setState((prev) => ({ ...prev, isSending: false }));
+        }
+      }
+
+      // First save audio locally if not already saved
+      if (!audioFilenameRef.current && audioChunksRef.current.length > 0) {
+        const mimeType = mediaRecorder?.mimeType || getSupportedMimeType();
+        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+        await saveAudioLocally(audioBlob);
+      }
+
+      // Then upload to S3 and create combined record
+      const success = await uploadAudioToS3();
+      if (success) {
+        clearResults();
+      }
+    } catch (error) {
+      console.error("Error in handleAccept:", error);
+      setState((prev) => ({
+        ...prev,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to process acceptance",
+        isSending: false,
+      }));
     }
-    
-    // Then upload to S3 and create combined record
-    const success = await uploadAudioToS3();
-    if (success) {
-      clearResults();
-    }
-  }, [uploadAudioToS3, clearResults, saveAudioLocally, mediaRecorder]);
+  }, [
+    uploadAudioToS3,
+    clearResults,
+    saveAudioLocally,
+    mediaRecorder,
+    createCombined,
+    token,
+    doctorId,
+  ]);
 
   const handleReject = useCallback(async () => {
-    // First save audio locally if not already saved
-    if (!audioFilenameRef.current) {
-      const mimeType = mediaRecorder?.mimeType || getSupportedMimeType();
-      const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
-      await saveAudioLocally(audioBlob);
+    try {
+      // If there's no audio at all, just create a minimal record
+      if (audioChunksRef.current.length === 0 && !audioFilenameRef.current) {
+        // Create a minimal valid payload directly
+        setState((prev) => ({ ...prev, isSending: true }));
+
+        try {
+          // Create a minimal valid payload with only required fields
+          const payload = {
+            session_id: sessionIdRef.current,
+            doctor_id: doctorId || "",
+            // Include minimal data to avoid validation errors
+            diagnosis: [],
+            // Fix: Use null for age instead of 0
+            age: null,
+            data_json: {
+              data: [],
+              diagnoses: [],
+              symptoms: [],
+              // Fix: Use null for age instead of 0
+              age: null,
+            },
+            vitals: {
+              pain_score: 0,
+              weight_kg: 0,
+              height_cm: 0,
+              temperature_celsius: 0,
+            },
+          };
+
+          console.log(
+            "Creating minimal record (reject):",
+            JSON.stringify(payload)
+          );
+
+          const createResult = await createCombined(token)(payload);
+          if (!createResult.ok) {
+            console.error(
+              "Failed to create minimal record:",
+              createResult.error
+            );
+            throw new Error(createResult.error || "Failed to create record");
+          }
+
+          clearResults();
+          return;
+        } catch (err) {
+          console.error("Error creating minimal record:", err);
+          throw err;
+        } finally {
+          setState((prev) => ({ ...prev, isSending: false }));
+        }
+      }
+
+      // First save audio locally if not already saved
+      if (!audioFilenameRef.current && audioChunksRef.current.length > 0) {
+        const mimeType = mediaRecorder?.mimeType || getSupportedMimeType();
+        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+        await saveAudioLocally(audioBlob);
+      }
+
+      // Then upload to S3 and create combined record
+      const success = await uploadAudioToS3();
+      if (success) {
+        clearResults();
+      }
+    } catch (error) {
+      console.error("Error in handleReject:", error);
+      setState((prev) => ({
+        ...prev,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to process rejection",
+        isSending: false,
+      }));
     }
-    
-    // Then upload to S3 and create combined record
-    const success = await uploadAudioToS3();
-    if (success) {
-      clearResults();
-    }
-  }, [uploadAudioToS3, clearResults, saveAudioLocally, mediaRecorder]);
+  }, [
+    uploadAudioToS3,
+    clearResults,
+    saveAudioLocally,
+    mediaRecorder,
+    createCombined,
+    token,
+    doctorId,
+  ]);
 
   const handleSendForDiagnosis = useCallback(async () => {
     setState((s) => ({ ...s, isSending: true }));
@@ -1288,7 +1514,7 @@ export default function AudioRecorder() {
       const payload = {
         doctors_notes: doctorsNotesRef.current || "",
         gender: genderRef.current || "",
-        age: ageRef.current ? parseInt(ageRef.current) : 0,
+        age: ageRef.current ? parseInt(ageRef.current) : null,
         threshold: 0.5,
         vitals: {
           blood_pressure: vitalsRef.current?.blood_pressure || "",
@@ -1362,10 +1588,10 @@ export default function AudioRecorder() {
       }
       setMediaRecorder(null);
       setState((s) => ({ ...s, isRecording: false }));
-      
+
       // Process audio in the background
       console.log("Processing audio in background after stopping recording");
-      
+
       // Run the rest of the stop recording logic in the background
       setTimeout(() => {
         // Process final audio if needed
@@ -1375,10 +1601,10 @@ export default function AudioRecorder() {
             type: mimeType,
           });
           const ts = Date.now();
-          
+
           isSendingLockRef.current = true;
           setState((s) => ({ ...s, isSending: true }));
-          
+
           const form = new FormData();
           const ext = mimeType.includes("webm") ? "webm" : "wav";
           form.append(
@@ -1386,14 +1612,15 @@ export default function AudioRecorder() {
             completeAudio,
             `final-${sessionIdRef.current}-${ts}.${ext}`
           );
-          
+
           fetch("/api/deepgram/transcribe", {
             method: "POST",
             body: form,
             headers: token ? { Authorization: `Bearer ${token}` } : {},
           })
             .then((response) => {
-              if (!response.ok) throw new Error(`Transcription failed: ${response.status}`);
+              if (!response.ok)
+                throw new Error(`Transcription failed: ${response.status}`);
               return response.json();
             })
             .then((data) => {
@@ -1614,10 +1841,7 @@ export default function AudioRecorder() {
             {state.keypoints.length > 0 && (
               <div className="mt-4">
                 <h3 className="font-semibold mb-2 text-base sm:text-lg">
-                  Key Points{" "}
-                  {state.diagnosis?.source
-                    ? `(Source: ${state.diagnosis.source})`
-                    : ""}
+                  Key Points
                 </h3>
                 <div className="bg-white p-3 rounded-md shadow-sm">
                   <ul className="list-disc pl-5 text-sm sm:text-base">

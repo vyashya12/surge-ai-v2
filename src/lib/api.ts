@@ -263,7 +263,7 @@ interface DiagnosesRequest {
   };
   doctors_notes: string | undefined;
   gender: string | undefined;
-  age: string | undefined;
+  age: number | null | undefined;
   vitals: {
     blood_pressure: string | undefined;
     heart_rate_bpm: string | undefined;
@@ -365,7 +365,7 @@ interface DiagnosisRequest {
   doctors_notes?: string;
   threshold?: number;
   gender?: string;
-  age?: string;
+  age?: number | null;
   vitals?: {
     blood_pressure?: string;
     heart_rate_bpm?: string;
@@ -385,7 +385,7 @@ interface DiagnosisResponse {
   similarity?: number;
   doctors_notes?: string;
   gender?: string;
-  age?: string;
+  age?: number | null;
   vitals?: {
     blood_pressure?: string;
     heart_rate_bpm?: string;
@@ -407,9 +407,10 @@ export const getDiagnosis =
       // Ensure age is properly formatted for the API
       const requestData = {
         ...data,
-        age: data.age && data.age.trim() !== "" ? data.age : undefined
+        // Send age as is if it's a number, or undefined if null/undefined
+        age: data.age !== null && data.age !== undefined ? data.age : undefined,
       };
-      
+
       const client = createApiClient(token);
       const response = await client.post<DiagnosisResponse>(
         "/rag/diagnose",
@@ -465,7 +466,7 @@ interface CombinedCreateRequest {
   patient_summary?: string;
   doctor_summary?: string;
   notes_summary?: string;
-  diagnosis: Array<{ diagnosis: string; likelihood: number }>;
+  diagnosis?: Array<{ diagnosis: string; likelihood: number }>; // Made optional
   data_json?: {
     data?: any[];
     patient_summary?: string;
@@ -474,7 +475,7 @@ interface CombinedCreateRequest {
     diagnoses?: Array<{ diagnosis: string; likelihood: number }>;
     symptoms?: string[];
     gender?: string;
-    age?: string;
+    age?: number | null;
     vitals?: {
       blood_pressure?: string;
       heart_rate_bpm?: string;
@@ -487,9 +488,9 @@ interface CombinedCreateRequest {
     };
   };
   audio_url?: string;
-  conversation: string;
+  conversation?: string; // Made optional
   gender?: string;
-  age?: string;
+  age?: number | null;
   vitals?: {
     blood_pressure?: string;
     heart_rate_bpm?: string;
@@ -507,7 +508,7 @@ interface CombinedCreateResponse {
   summary_id?: string;
   diagnosis_validation_id?: string;
   gender?: string;
-  age?: string;
+  age?: number | null;
   vitals?: {
     blood_pressure?: string;
     heart_rate_bpm?: string;
@@ -529,10 +530,62 @@ export const createCombined =
     data: CombinedCreateRequest
   ): Promise<Result<CombinedCreateResponse, string>> => {
     try {
+      // Ensure all fields have default values if they're empty
+      const sanitizedData: CombinedCreateRequest = {
+        ...data,
+        // Ensure required fields have default values
+        session_id: data.session_id || "",
+        doctor_id: data.doctor_id || "",
+        // Ensure diagnosis is always an array
+        diagnosis: Array.isArray(data.diagnosis) ? data.diagnosis : [],
+        // Ensure conversation is always a string
+        conversation: data.conversation || "",
+        // Ensure data_json is always an object with default values for all nested fields
+        data_json: {
+          data: data.data_json?.data || [],
+          patient_summary: data.data_json?.patient_summary || "",
+          doctor_summary: data.data_json?.doctor_summary || "",
+          doctor_note_summary: data.data_json?.doctor_note_summary || "",
+          diagnoses: data.data_json?.diagnoses || [],
+          symptoms: data.data_json?.symptoms || [],
+          gender: data.data_json?.gender || "",
+          age: data.data_json?.age || null,
+          vitals: {
+            blood_pressure: data.data_json?.vitals?.blood_pressure || "",
+            heart_rate_bpm: data.data_json?.vitals?.heart_rate_bpm || "",
+            respiratory_rate_bpm:
+              data.data_json?.vitals?.respiratory_rate_bpm || "",
+            spo2_percent: data.data_json?.vitals?.spo2_percent || "",
+            pain_score: data.data_json?.vitals?.pain_score || 0,
+            weight_kg: data.data_json?.vitals?.weight_kg || 0,
+            height_cm: data.data_json?.vitals?.height_cm || 0,
+            temperature_celsius:
+              data.data_json?.vitals?.temperature_celsius || 0,
+          },
+        },
+        // Ensure other fields have default values
+        patient_summary: data.patient_summary || "",
+        doctor_summary: data.doctor_summary || "",
+        notes_summary: data.notes_summary || "",
+        audio_url: data.audio_url || "",
+        gender: data.gender || "",
+        age: data.age || null,
+        vitals: {
+          blood_pressure: data.vitals?.blood_pressure || "",
+          heart_rate_bpm: data.vitals?.heart_rate_bpm || "",
+          respiratory_rate_bpm: data.vitals?.respiratory_rate_bpm || "",
+          spo2_percent: data.vitals?.spo2_percent || "",
+          pain_score: data.vitals?.pain_score || 0,
+          weight_kg: data.vitals?.weight_kg || 0,
+          height_cm: data.vitals?.height_cm || 0,
+          temperature_celsius: data.vitals?.temperature_celsius || 0,
+        },
+      };
+
       const client = createApiClient(token);
       const response = await client.post<CombinedCreateResponse>(
         "/create_combined",
-        data
+        sanitizedData
       );
       return response;
     } catch (error: unknown) {

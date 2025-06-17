@@ -5,7 +5,7 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata = {
   title: "SurgeAI",
-  description: "Record and diagnose your doctor and patient interactions",
+  description: "Copilot for doctors to smooth out the kinks in life",
 };
 
 export default function RootLayout({
