@@ -1,55 +1,92 @@
-import React, { Dispatch, SetStateAction, useState } from "react";
+"use client";
+
+import React from "react";
 import { Button } from "./button";
 import { ArrowLeftIcon, ArrowRightIcon } from "lucide-react";
 
-interface PaginationProps {
+interface DefaultPaginationProps {
+  /** Current active page (1-based index) */
   active: number;
-  setActive: Dispatch<SetStateAction<number>>;
+
+  /** Function to update the active page */
+  setActive: React.Dispatch<React.SetStateAction<number>>;
+
+  /** Total number of items in the dataset */
+  totalItems: number;
+
+  /** Items to display per page */
+  itemsPerPage: number;
+
+  /** Max number of page buttons to show (default = 5) */
+  maxVisible?: number;
 }
 
-export const DefaultPagination: React.FC<PaginationProps> = ({
+export const DefaultPagination: React.FC<DefaultPaginationProps> = ({
   active,
   setActive,
+  totalItems,
+  itemsPerPage,
+  maxVisible = 5,
 }) => {
-  const getItemProps = (index: number) =>
-    ({
-      variant: active === index ? "filled" : "text",
-      color: "gray",
-      onClick: () => setActive(index),
-    } as any);
+  const totalPages = Math.ceil(totalItems / itemsPerPage);
 
-  const next = () => {
-    if (active === 5) return;
-
-    setActive(active + 1);
+  const handlePrev = () => {
+    if (active > 1) setActive(active - 1);
   };
 
-  const prev = () => {
-    if (active === 1) return;
+  const handleNext = () => {
+    if (active < totalPages) setActive(active + 1);
+  };
 
-    setActive(active - 1);
+  const renderPageButtons = () => {
+    const buttons = [];
+
+    const half = Math.floor(maxVisible / 2);
+    let start = Math.max(1, active - half);
+    let end = Math.min(totalPages, start + maxVisible - 1);
+
+    if (end - start + 1 < maxVisible) {
+      start = Math.max(1, end - maxVisible + 1);
+    }
+
+    for (let i = start; i <= end; i++) {
+      buttons.push(
+        <Button
+          key={i}
+          onClick={() => setActive(i)}
+          variant={i === active ? "default" : "outline"}
+          aria-current={i === active ? "page" : undefined}
+          className="w-9 h-9 p-0 text-sm"
+        >
+          {i}
+        </Button>
+      );
+    }
+
+    return buttons;
   };
 
   return (
     <div className="flex items-center gap-4 mt-4">
       <Button
-        className="flex items-center gap-2"
-        onClick={prev}
+        onClick={handlePrev}
         disabled={active === 1}
+        variant="outline"
+        className="flex items-center gap-1"
+        aria-label="Previous page"
       >
-        <ArrowLeftIcon strokeWidth={2} className="h-4 w-4" /> Previous
+        <ArrowLeftIcon strokeWidth={2} className="h-4 w-4" />
+        Prev
       </Button>
-      <div className="flex items-center gap-2">
-        <Button {...getItemProps(1)}>1</Button>
-        <Button {...getItemProps(2)}>2</Button>
-        <Button {...getItemProps(3)}>3</Button>
-        <Button {...getItemProps(4)}>4</Button>
-        <Button {...getItemProps(5)}>5</Button>
-      </div>
+
+      <div className="flex items-center gap-1">{renderPageButtons()}</div>
+
       <Button
-        className="flex items-center gap-2"
-        onClick={next}
-        disabled={active === 5}
+        onClick={handleNext}
+        disabled={active === totalPages}
+        variant="outline"
+        className="flex items-center gap-1"
+        aria-label="Next page"
       >
         Next
         <ArrowRightIcon strokeWidth={2} className="h-4 w-4" />

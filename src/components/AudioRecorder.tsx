@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from "uuid";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
+import VitalsForm from "@/components/VitalsForm";
 import {
   Select,
   SelectContent,
@@ -20,8 +21,6 @@ import {
   getDiagnosis,
   getKeypoints,
   createCombined,
-  getDiagnosisFromNotes,
-  finalLabelConversation,
 } from "@/lib/api";
 import { Bar } from "react-chartjs-2";
 import {
@@ -73,6 +72,18 @@ interface Summary {
   doctor_summary: string;
 }
 
+// Centralized Vitals interface
+export interface Vitals {
+  blood_pressure?: string;
+  heart_rate_bpm?: string;
+  respiratory_rate_bpm?: string;
+  spo2_percent?: string;
+  pain_score?: number;
+  weight_kg?: number;
+  height_cm?: number;
+  temperature_celsius?: number;
+}
+
 interface Diagnosis {
   diagnoses: Array<{ diagnosis: string; likelihood: number }>;
   symptoms: string[];
@@ -81,16 +92,7 @@ interface Diagnosis {
   doctors_notes?: string;
   gender?: string;
   age?: number | null;
-  vitals?: {
-    blood_pressure?: string;
-    heart_rate_bpm?: string;
-    respiratory_rate_bpm?: string;
-    spo2_percent?: string;
-    pain_score?: number;
-    weight_kg?: number;
-    height_cm?: number;
-    temperature_celsius?: number;
-  };
+  vitals?: Vitals;
 }
 
 interface CombinedCreateRequest {
@@ -99,7 +101,7 @@ interface CombinedCreateRequest {
   patient_summary?: string;
   doctor_summary?: string;
   notes_summary?: string;
-  diagnosis?: Array<{ diagnosis: string; likelihood: number }>; // Made optional
+  diagnosis?: Array<{ diagnosis: string; likelihood: number }>;
   data_json?: {
     data?: Array<{ [speaker: string]: string }>;
     patient_summary?: string;
@@ -109,51 +111,24 @@ interface CombinedCreateRequest {
     symptoms?: string[];
     gender?: string;
     age?: number | null;
-    vitals?: {
-      blood_pressure?: string;
-      heart_rate_bpm?: string;
-      respiratory_rate_bpm?: string;
-      spo2_percent?: string;
-      pain_score?: number;
-      weight_kg?: number;
-      height_cm?: number;
-      temperature_celsius?: number;
-    };
+    vitals?: Vitals;
   };
   audio_url?: string;
-  conversation?: string; // Made optional
+  conversation?: string;
   gender?: string;
   age?: number | null;
-  vitals?: {
-    blood_pressure?: string;
-    heart_rate_bpm?: string;
-    respiratory_rate_bpm?: string;
-    spo2_percent?: string;
-    pain_score?: number;
-    weight_kg?: number;
-    height_cm?: number;
-    temperature_celsius?: number;
-  };
+  vitals?: Vitals;
 }
 
 interface CombinedCreateResponse {
-  session_id?: string; // Made optional
-  summary_id?: string; // Made optional
-  diagnosis_validation_id?: string; // Made optional
-  gender?: string; // Made optional
-  age?: number | null; // Made optional
+  session_id?: string;
+  summary_id?: string;
+  diagnosis_validation_id?: string;
+  gender?: string;
+  age?: number | null;
   status?: number;
   message?: string;
-  vitals?: {
-    blood_pressure?: string;
-    heart_rate_bpm?: string;
-    respiratory_rate_bpm?: string;
-    spo2_percent?: string;
-    pain_score?: number;
-    weight_kg?: number;
-    height_cm?: number;
-    temperature_celsius?: number;
-  };
+  vitals?: Vitals;
 }
 
 type RecorderState = {
@@ -171,16 +146,7 @@ type RecorderState = {
   gender: string;
   age: string;
   session?: CombinedCreateResponse;
-  vitals: {
-    blood_pressure?: string;
-    heart_rate_bpm?: string;
-    respiratory_rate_bpm?: string;
-    spo2_percent?: string;
-    pain_score?: number;
-    weight_kg?: number;
-    height_cm?: number;
-    temperature_celsius?: number;
-  };
+  vitals: Vitals;
 };
 
 export default function AudioRecorder() {
@@ -201,15 +167,13 @@ export default function AudioRecorder() {
     session: undefined,
     vitals: {},
   });
-  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(
-    null
-  );
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [isHydrated, setIsHydrated] = useState(false);
   const [isKeypointsOpen, setIsKeypointsOpen] = useState(false);
   const audioChunksRef = useRef<Blob[]>([]);
-  const sessionIdRef = useRef<string>(uuidv4());
+  const sessionIdRef = useRef(uuidv4());
   const audioFilenameRef = useRef<string | null>(null);
-  const isSendingLockRef = useRef<boolean>(false);
+  const isSendingLockRef = useRef(false);
   const doctorsNotesRef = useRef(state.doctorsNotes);
   const genderRef = useRef(state.gender);
   const ageRef = useRef(state.age);
@@ -221,7 +185,7 @@ export default function AudioRecorder() {
 
   const audioQueueRef = useRef<Blob[]>([]);
   const sendIntervalRef = useRef<number | null>(null);
-  const startTimeRef = useRef<number>(0);
+  const startTimeRef = useRef(0);
 
   useEffect(() => {
     doctorsNotesRef.current = state.doctorsNotes;
@@ -1706,74 +1670,7 @@ export default function AudioRecorder() {
                 className="w-full bg-white"
               />
             </div>
-            <div className="mt-4">
-              <h3 className="font-semibold mb-2 text-base sm:text-lg">
-                Vitals (Optional)
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Input
-                  type="text"
-                  value={state.vitals?.blood_pressure || ""}
-                  onChange={(e) => handleVitalsChange(e, "blood_pressure")}
-                  placeholder="Blood Pressure (e.g., 120/80)"
-                  className="w-full bg-white"
-                />
-                <Input
-                  type="text"
-                  value={state.vitals?.heart_rate_bpm || ""}
-                  onChange={(e) => handleVitalsChange(e, "heart_rate_bpm")}
-                  placeholder="Heart Rate (bpm, e.g., 60-100)"
-                  className="w-full bg-white"
-                />
-                <Input
-                  type="text"
-                  value={state.vitals?.respiratory_rate_bpm || ""}
-                  onChange={(e) =>
-                    handleVitalsChange(e, "respiratory_rate_bpm")
-                  }
-                  placeholder="Respiratory Rate (bpm, e.g., 12-20)"
-                  className="w-full bg-white"
-                />
-                <Input
-                  type="text"
-                  value={state.vitals?.spo2_percent || ""}
-                  onChange={(e) => handleVitalsChange(e, "spo2_percent")}
-                  placeholder="SpO2 (%)"
-                  className="w-full bg-white"
-                />
-                <Input
-                  type="number"
-                  value={state.vitals?.pain_score ?? ""}
-                  onChange={(e) => handleVitalsChange(e, "pain_score")}
-                  placeholder="Pain Score (0-10)"
-                  min={0}
-                  max={10}
-                  className="w-full bg-white"
-                />
-                <Input
-                  type="number"
-                  value={state.vitals?.weight_kg ?? ""}
-                  onChange={(e) => handleVitalsChange(e, "weight_kg")}
-                  placeholder="Weight (kg)"
-                  className="w-full bg-white"
-                />
-                <Input
-                  type="number"
-                  value={state.vitals?.height_cm ?? ""}
-                  onChange={(e) => handleVitalsChange(e, "height_cm")}
-                  placeholder="Height (cm)"
-                  className="w-full bg-white"
-                />
-                <Input
-                  type="number"
-                  value={state.vitals?.temperature_celsius ?? ""}
-                  onChange={(e) => handleVitalsChange(e, "temperature_celsius")}
-                  placeholder="Temperature (°C)"
-                  step="0.1"
-                  className="w-full bg-white"
-                />
-              </div>
-            </div>
+            <VitalsForm vitals={state.vitals} onChange={handleVitalsChange} />
             <div className="flex w-full justify-center gap-4 mt-4">
               {/* Start/Resume Recording Button */}
               {(!state.isRecording || state.isPaused) && (
