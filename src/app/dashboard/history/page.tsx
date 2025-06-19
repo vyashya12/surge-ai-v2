@@ -12,6 +12,13 @@ import {
 } from "@/components/ui/dialog";
 import { getAuthData } from "@/lib/auth";
 import { Session, Summary } from "@/types";
+import {
+  Tooltip,
+  TooltipProvider,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/components/ui/tooltip";
+import { DefaultPagination } from "@/components/ui/pagination";
 
 interface SessionWithSummary extends Session {
   summary?: Summary;
@@ -27,19 +34,49 @@ interface PageState {
 const formatDate = (isoString: string): string => {
   try {
     const dt = new Date(isoString.replace("Z", "+00:00"));
-    return dt
-      .toLocaleString("en-US", {
-        year: "numeric",
-        month: "numeric",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-      })
-      .replace(",", "");
+    return dt.toLocaleString("en-US", {
+      year: "numeric",
+      month: "numeric",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
   } catch {
     return isoString;
   }
+};
+
+const formatTranscript = (raw: string) => {
+  const lines = raw
+    .split(/(?:^|\n)(doctor:|patient:)/gi)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const formatted = [];
+
+  for (let i = 0; i < lines.length; i += 2) {
+    const speakerRaw = lines[i];
+    const messageRaw = lines[i + 1] || "";
+
+    const speaker = speakerRaw.toLowerCase().replace(":", "");
+    const message = messageRaw.trim();
+
+    if (!["doctor", "patient"].includes(speaker)) continue;
+
+    formatted.push(
+      <div key={i} className="mb-2 leading-relaxed">
+        <span className="font-semibold">
+          {speaker.charAt(0).toUpperCase() + speaker.slice(1)}:
+        </span>{" "}
+        <span>
+          {message || <em className="text-gray-400">[no response]</em>}
+        </span>
+      </div>
+    );
+  }
+
+  return formatted;
 };
 
 const loadData =
@@ -90,6 +127,13 @@ export default function HistoryPage() {
     error: null,
     openDialogIndex: null,
   });
+  const ITEMS_PER_PAGE = 5;
+  const [active, setActive] = useState(1);
+  const paginatedSessions =
+    state.sessions?.slice(
+      (active - 1) * ITEMS_PER_PAGE,
+      active * ITEMS_PER_PAGE
+    ) ?? [];
 
   useEffect(() => {
     const authData = getAuthData();
@@ -133,49 +177,8 @@ export default function HistoryPage() {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 bg-gray-50 min-h-screen">
-      <style jsx>{`
-        .conversation-modal-dark {
-          padding: 20px;
-          background-color: #1e293b;
-          border-radius: 12px;
-          border: 1px solid #334155;
-          color: #f1f5f9;
-          font-size: 15px;
-          line-height: 1.6;
-        }
-        .conversation-modal-dark pre {
-          background-color: transparent;
-          color: #f1f5f9;
-          white-space: pre-wrap;
-          font-family: "Courier New", monospace;
-          margin-top: 10px;
-        }
-        .styled-button {
-          background-color: #4f46e5 !important;
-          color: white !important;
-          font-weight: 600;
-          border: none;
-          border-radius: 6px;
-          padding: 6px 16px;
-          font-size: 14px;
-        }
-        .styled-button:hover {
-          background-color: #4338ca !important;
-        }
-        .table-header {
-          font-weight: 700;
-          font-size: 15px;
-          margin-bottom: 15px;
-          color: #374151;
-        }
-        .audio-player {
-          width: 100%;
-          max-width: 400px;
-          min-width: 300px;
-        }
-      `}</style>
       <p className="font-bold text-xl mb-6">History</p>
-      <Card className="mt-6 w-full max-w-7xl mx-auto min-h-[35rem] h-auto">
+      <Card className="mt-6 w-full max-w-7xl mx-auto min-h-[32rem]">
         <CardHeader>
           <CardTitle>
             🩺 Doctor ID: {authData.ok ? authData.value.user.id : "N/A"}
@@ -189,64 +192,116 @@ export default function HistoryPage() {
           ) : !state.sessions || state.sessions.length === 0 ? (
             <p>ℹ️ No session history available yet for this doctor.</p>
           ) : (
-            <div className="max-h-[32rem] overflow-y-auto">
-              <div className="grid grid-cols-[3.5fr_1fr_3fr_2fr_1.5fr] gap-4 mb-4">
-                <div className="table-header">Audio</div>
-                <div className="table-header">Conversation</div>
-                <div className="table-header">Patient Summary</div>
-                <div className="table-header">Diagnostic Summary</div>
-                <div className="table-header">Created At</div>
-              </div>
-              {state.sessions.map(
-                (session: SessionWithSummary, index: number) => (
-                  <div key={session.id}>
-                    <div className="grid grid-cols-[3.5fr_1fr_3fr_2fr_1.5fr] gap-4 items-center py-2">
-                      <div>
+            <div className="overflow-x-auto">
+              <table className="w-full table-fixed text-sm">
+                <thead>
+                  <tr className="text-xs font-semibold text-gray-600 border-b">
+                    <th className="py-3 px-2 text-left">Audio</th>
+                    <th className="py-3 px-2 text-left">Conversation</th>
+                    <th className="py-3 px-2 text-left">Patient Summary</th>
+                    <th className="py-3 px-2 text-left">Diagnostic Summary</th>
+                    <th className="py-3 px-2 text-left">Created At</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedSessions.map((session, index) => (
+                    <tr key={session.id} className="border-b hover:bg-gray-50">
+                      <td className="py-3 px-2">
                         {session.audio_url ? (
                           <audio
                             controls
-                            className="audio-player"
+                            className="w-full max-w-lg h-10"
                             src={session.audio_url}
-                          >
-                            Your browser does not support the audio element.
-                          </audio>
+                          />
                         ) : (
                           <span>-</span>
                         )}
-                      </div>
-                      <div>
+                      </td>
+                      <td className="py-3 px-2">
                         <Button
-                          className="styled-button"
-                          onClick={() => toggleDialog(index)}
+                          size="sm"
+                          className="px-6 py-4 bg-gray-100 hover:bg-gray-300 text-black"
+                          onClick={() =>
+                            toggleDialog((active - 1) * ITEMS_PER_PAGE + index)
+                          }
                         >
                           Convo
                         </Button>
-                      </div>
-                      <div>{session.summary?.patient || "-"}</div>
-                      <div>{session.summary?.doctor || "-"}</div>
-                      <div>{formatDate(session.created_at)}</div>
-                    </div>
-                    <Dialog
-                      open={state.openDialogIndex === index}
-                      onOpenChange={(open) => toggleDialog(open ? index : null)}
-                    >
-                      <DialogContent className="conversation-modal-dark">
-                        <DialogHeader>
-                          <DialogTitle>Conversation Transcript</DialogTitle>
-                        </DialogHeader>
-                        <p>
-                          {session.conversation || "No transcript available"}
-                        </p>
-                      </DialogContent>
-                    </Dialog>
-                    <hr className="my-2" />
-                  </div>
-                )
-              )}
+                      </td>
+                      <td className="py-3 px-2 align-top text-gray-700 max-w-xs">
+                        <TooltipProvider delayDuration={150}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div className="line-clamp-3 cursor-default">
+                                {session.summary?.patient || "-"}
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent
+                              side="top"
+                              className="max-w-sm whitespace-pre-line break-words text-sm leading-relaxed"
+                            >
+                              {session.summary?.patient}
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </td>
+                      <td className="py-3 px-2 align-top text-gray-700 max-w-xs">
+                        <TooltipProvider delayDuration={150}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div className="line-clamp-3 cursor-default">
+                                {session.summary?.doctor || "-"}
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent
+                              side="top"
+                              className="max-w-sm whitespace-pre-line break-words text-sm leading-relaxed"
+                            >
+                              {session.summary?.doctor}
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </td>
+
+                      <td className="py-3 px-2 text-gray-500 whitespace-nowrap">
+                        {formatDate(session.created_at)}
+                      </td>
+                      <Dialog
+                        open={
+                          state.openDialogIndex ===
+                          (active - 1) * ITEMS_PER_PAGE + index
+                        }
+                        onOpenChange={(open) =>
+                          toggleDialog(open ? index : null)
+                        }
+                      >
+                        <DialogContent className="conversation-modal-dark">
+                          <DialogHeader>
+                            <DialogTitle>Conversation Transcript</DialogTitle>
+                          </DialogHeader>
+                          <div className="font-mono text-sm whitespace-pre-wrap max-h-[400px] overflow-y-auto">
+                            {session.conversation
+                              ? formatTranscript(session.conversation)
+                              : "No transcript available."}
+                          </div>
+                        </DialogContent>
+                      </Dialog>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </CardContent>
       </Card>
+      <div className="flex justify-end border-t p-4">
+        <DefaultPagination
+          active={active}
+          setActive={setActive}
+          totalItems={state.sessions?.length ?? 0}
+          itemsPerPage={ITEMS_PER_PAGE}
+        />
+      </div>
     </div>
   );
 }
