@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
     const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
       audioBuffer,
       {
-        model: "whisper-large",
+        model: "nova-3",
         smart_format: true,
         punctuate: true,
         utterances: true,
