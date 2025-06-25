@@ -1,18 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const protectedRoutes = ["/home", "/validation", "/history"];
-
-export const middleware = (request: NextRequest) => {
-  const token = request.cookies.get("token")?.value;
-  const isProtectedRoute = protectedRoutes.some((route) =>
-    request.nextUrl.pathname.startsWith(route)
-  );
-
-  return isProtectedRoute && !token
-    ? NextResponse.redirect(new URL("/login", request.url))
-    : NextResponse.next();
-};
+export async function middleware(request: NextRequest) {
+  const token = request.headers.get("Authorization")?.replace("Bearer ", "");
+  
+  if (token) {
+    try {
+      const response = await fetch(`${request.nextUrl.origin}/api/auth/blacklist`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const { blacklisted } = await response.json();
+      
+      if (blacklisted) {
+        return NextResponse.json({ error: "Token invalid" }, { status: 401 });
+      }
+    } catch (error) {
+      // Continue if blacklist check fails
+    }
+  }
+  
+  return NextResponse.next();
+}
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/api/:path*", "/dashboard/:path*"]
 };

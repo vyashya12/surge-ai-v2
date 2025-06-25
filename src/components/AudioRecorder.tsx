@@ -34,6 +34,7 @@ import {
 } from "chart.js";
 import { Card, CardTitle } from "./ui/card";
 import { Menu } from "lucide-react";
+import { Loader } from "./ui/loader";
 
 // Register Chart.js components
 ChartJS.register(BarElement, CategoryScale, LinearScale, Tooltip);
@@ -1925,14 +1926,30 @@ export default function AudioRecorder() {
                     <Button
                       onClick={handleAccept}
                       className="bg-[#34E796] hover:bg-[#00c36b]"
+                      disabled={state.isSending}
                     >
-                      Valid
+                      {state.isSending ? (
+                        <div className="flex items-center gap-2">
+                          <Loader size={16} className="text-white" />
+                          Processing...
+                        </div>
+                      ) : (
+                        "Valid"
+                      )}
                     </Button>
                     <Button
                       onClick={handleReject}
                       className="bg-[#f27252] hover:bg-[#ea5321]"
+                      disabled={state.isSending}
                     >
-                      Reject
+                      {state.isSending ? (
+                        <div className="flex items-center gap-2">
+                          <Loader size={16} className="text-white" />
+                          Processing...
+                        </div>
+                      ) : (
+                        "Reject"
+                      )}
                     </Button>
                   </div>
                 </div>

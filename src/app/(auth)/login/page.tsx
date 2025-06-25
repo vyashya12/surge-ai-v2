@@ -19,6 +19,7 @@ import { login } from "@/lib/api";
 import { saveAuthData } from "@/lib/auth";
 import { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
+import { Loader } from "@/components/ui/loader";
 
 const formSchema = z.object({
   email: z.string().email({ message: "Invalid email address" }),
@@ -45,6 +46,7 @@ const handleSubmit =
 
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   const router = useRouter();
   const form = useForm<FormValues>({
@@ -53,10 +55,12 @@ export default function LoginPage() {
   });
 
   const onSubmit = async (values: FormValues) => {
+    setIsLoading(true);
     const result = await handleSubmit(router)(values);
     if (!result.ok) {
       form.setError("root", { message: result.error });
     }
+    setIsLoading(false);
   };
 
   return (
@@ -122,8 +126,15 @@ export default function LoginPage() {
               {form.formState.errors.root && (
                 <p className="text-red-500">Invalid credentials</p>
               )}
-              <Button type="submit" className="w-full bg-blue-500 hover:bg-blue-700">
-                Login
+              <Button type="submit" className="w-full bg-blue-500 hover:bg-blue-700" disabled={isLoading}>
+                {isLoading ? (
+                  <div className="flex items-center gap-2">
+                    <Loader size={16} className="text-white" />
+                    Logging in...
+                  </div>
+                ) : (
+                  "Login"
+                )}
               </Button>
             </form>
           </Form>
