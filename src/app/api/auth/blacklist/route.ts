@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 // In production, use Redis or database
-const blacklistedUserIds = new Set<string>();
+export const blacklistedUserIds = new Set<string>();
 
 function extractUserIdFromToken(token: string): string | null {
   const match = token.match(/^token_([^_]+)_/);
