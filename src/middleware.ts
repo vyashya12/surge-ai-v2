@@ -22,5 +22,8 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/api/:path*", "/dashboard/:path*"]
+  matcher: [
+    "/api/((?!auth/blacklist).)*", // Exclude blacklist endpoint
+    "/dashboard/:path*"
+  ]
 };

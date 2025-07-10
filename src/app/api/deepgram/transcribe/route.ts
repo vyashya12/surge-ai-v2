@@ -7,6 +7,7 @@ interface TranscribeResponse {
 
 export async function POST(request: NextRequest) {
   try {
+
     // Validate Deepgram API key
     const deepgramApiKey = process.env.DEEPGRAM_API_KEY;
     if (!deepgramApiKey) {
@@ -39,13 +40,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate audio size and type
-    // if (audioBlob.size < 512) {
-    //   console.error(`Audio blob too small: ${audioBlob.size} bytes`);
-    //   return NextResponse.json(
-    //     { message: "Audio file too small" },
-    //     { status: 400 }
-    //   );
-    // }
+    console.log("Audio size:", audioBlob.size);
+    if (audioBlob.size > 50 * 1024 * 1024) {
+      // Limit to 50MB
+      console.error(`Audio file too large: ${audioBlob.size} bytes`);
+      return NextResponse.json(
+        { message: "Audio file too large (max 50MB)" },
+        { status: 400 }
+      );
+    }
 
     const mimeType = audioBlob.type || "audio/webm;codecs=opus";
     const supportedMimeTypes = [
@@ -62,13 +65,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Convert Blob to Buffer
+    // Convert Blob to Buffer (minimize memory usage)
     const audioBuffer = Buffer.from(await audioBlob.arrayBuffer());
+    console.log("Buffer created, size:", audioBuffer.length);
 
     // Initialize Deepgram client
     const deepgram = createClient(deepgramApiKey);
 
-    // Transcribe audio without diarization
+    // Transcribe audio
     const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
       audioBuffer,
       {
@@ -79,6 +83,8 @@ export async function POST(request: NextRequest) {
         mimetype: mimeType,
       }
     );
+
+
 
     if (error) {
       console.error("Deepgram transcription error:", error.message);
