@@ -26,6 +26,9 @@ const formSchema = z.object({
   password: z
     .string()
     .min(6, { message: "Password must be at least 6 characters" }),
+  acceptTerms: z.boolean().refine(val => val === true, {
+    message: "You must accept the Terms & Conditions"
+  }),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -51,7 +54,7 @@ export default function LoginPage() {
   const router = useRouter();
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: { email: "", password: "" },
+    defaultValues: { email: "", password: "", acceptTerms: false },
   });
 
   const onSubmit = async (values: FormValues) => {
@@ -120,6 +123,35 @@ export default function LoginPage() {
                       </div>
                     </FormControl>
                     <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="acceptTerms"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                    <FormControl>
+                      <input
+                        type="checkbox"
+                        checked={field.value}
+                        onChange={field.onChange}
+                        className="mt-1"
+                      />
+                    </FormControl>
+                    <div className="space-y-1 leading-none">
+                      <FormLabel className="text-sm">
+                        I agree to the{" "}
+                        <a
+                          href="/terms"
+                          target="_blank"
+                          className="text-blue-600 hover:underline"
+                        >
+                          Terms & Conditions
+                        </a>
+                      </FormLabel>
+                      <FormMessage />
+                    </div>
                   </FormItem>
                 )}
               />

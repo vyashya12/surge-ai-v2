@@ -33,6 +33,26 @@ export interface Diagnosis {
   symptoms: string[];
   source: string;
   similarity: number;
+  doctors_notes: string;
+  gender: string;
+  age: number;
+  vitals: {
+    blood_pressure: string;
+    heart_rate_bpm: string;
+    respiratory_rate_bpm: string;
+    spo2_percent: string;
+    pain_score: number;
+    weight_kg: number;
+    height_cm: number;
+    temperature_celsius: number;
+  };
+  presenting_complaint: string;
+  past_medical_history: string;
+  drug_history: string;
+  allergies: string;
+  smoking_history: string;
+  alcohol_history: string;
+  social_history: string;
 }
 
 export interface DiagnosisValidation {

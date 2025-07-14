@@ -188,6 +188,31 @@ export const getAllDiagnosisValidations =
     }
   };
 
+// Get validation data by session ID
+export const getValidationBySessionId =
+  (token: string | null) =>
+  async (sessionId: string): Promise<Result<DiagnosisValidation | null, string>> => {
+    try {
+      const allValidationsResult = await getAllDiagnosisValidations(token)();
+      if (!allValidationsResult.ok) {
+        return allValidationsResult;
+      }
+      
+      const validation = allValidationsResult.value.find(
+        (v) => v.session_id === sessionId
+      );
+      
+      return { ok: true, value: validation || null };
+    } catch (error: unknown) {
+      const appError = error as AppError;
+      console.error("getValidationBySessionId fetch error:", appError);
+      return {
+        ok: false,
+        error: appError.message || "Failed to fetch validation data",
+      };
+    }
+  };
+
 // Get summary by ID
 // export const getSummaryById =
 //   (token: string | null) =>
@@ -381,21 +406,28 @@ interface DiagnosisRequest {
 interface DiagnosisResponse {
   diagnoses: Array<{ diagnosis: string; likelihood: number }>;
   symptoms: string[];
-  source?: string;
-  similarity?: number;
-  doctors_notes?: string;
-  gender?: string;
-  age?: number | null;
-  vitals?: {
-    blood_pressure?: string;
-    heart_rate_bpm?: string;
-    respiratory_rate_bpm?: string;
-    spo2_percent?: string;
-    pain_score?: number;
-    weight_kg?: number;
-    height_cm?: number;
-    temperature_celsius?: number;
+  source: string;
+  similarity: number;
+  doctors_notes: string;
+  gender: string;
+  age: number;
+  vitals: {
+    blood_pressure: string;
+    heart_rate_bpm: string;
+    respiratory_rate_bpm: string;
+    spo2_percent: string;
+    pain_score: number;
+    weight_kg: number;
+    height_cm: number;
+    temperature_celsius: number;
   };
+  presenting_complaint: string;
+  past_medical_history: string;
+  drug_history: string;
+  allergies: string;
+  smoking_history: string;
+  alcohol_history: string;
+  social_history: string;
 }
 
 export const getDiagnosis =

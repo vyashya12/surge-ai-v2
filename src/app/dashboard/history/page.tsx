@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getSessionHistory, getSummaryById } from "@/lib/api";
+import { getSessionHistory, getSummaryById, getValidationBySessionId } from "@/lib/api";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,7 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { getAuthData } from "@/lib/auth";
-import { Session, Summary } from "@/types";
+import { Session, Summary, DiagnosisValidation } from "@/types";
 import {
   Tooltip,
   TooltipProvider,
@@ -22,6 +22,7 @@ import { DefaultPagination } from "@/components/ui/pagination";
 
 interface SessionWithSummary extends Session {
   summary?: Summary;
+  validation?: DiagnosisValidation;
 }
 
 interface PageState {
@@ -102,21 +103,30 @@ const loadData =
     const sessions = sessionResult.value;
     const sessionsWithSummaries: SessionWithSummary[] = await Promise.all(
       sessions.map(async (session: Session) => {
+        const sessionData: SessionWithSummary = { ...session };
+        
+        // Get summary data
         if (session.summaryid) {
           const summaryResult = await getSummaryById(token)(session.summaryid);
-          return {
-            ...session,
-            summary: summaryResult.ok ? summaryResult.value : undefined,
-          };
+          if (summaryResult.ok) {
+            sessionData.summary = summaryResult.value;
+          }
         }
-        return session;
+        
+        // Get validation data (contains diagnoses)
+        const validationResult = await getValidationBySessionId(token)(session.id);
+        if (validationResult.ok && validationResult.value) {
+          sessionData.validation = validationResult.value;
+        }
+        
+        return sessionData;
       })
     );
 
     setState((prev) => ({
       ...prev,
       loading: false,
-      sessions: sessionsWithSummaries,
+      sessions: sessionsWithSummaries.reverse(), // Show newest first
     }));
   };
 
@@ -201,6 +211,7 @@ export default function HistoryPage() {
                     <th className="py-3 px-2 text-left">Patient Summary</th>
                     <th className="py-3 px-2 text-left">Diagnostic Summary</th>
                     <th className="py-3 px-2 text-left">Created At</th>
+                    <th className="py-3 px-2 text-left">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -265,6 +276,24 @@ export default function HistoryPage() {
 
                       <td className="py-3 px-2 text-gray-500 whitespace-nowrap">
                         {formatDate(session.created_at)}
+                      </td>
+                      <td className="py-3 px-2">
+                        <Button
+                          size="sm"
+                          className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white"
+                          onClick={() => {
+                            const sessionData = encodeURIComponent(JSON.stringify({
+                              id: session.id,
+                              conversation: session.conversation,
+                              summary: session.summary,
+                              audio_url: session.audio_url,
+                              validation: session.validation
+                            }));
+                            window.location.href = `/dashboard/home?session=${sessionData}`;
+                          }}
+                        >
+                          View Details
+                        </Button>
                       </td>
                       <Dialog
                         open={

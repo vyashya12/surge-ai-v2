@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { v4 as uuidv4 } from "uuid";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -88,12 +89,19 @@ export interface Vitals {
 interface Diagnosis {
   diagnoses: Array<{ diagnosis: string; likelihood: number }>;
   symptoms: string[];
-  source?: string;
-  similarity?: number;
-  doctors_notes?: string;
-  gender?: string;
-  age?: number | null;
-  vitals?: Vitals;
+  source: string;
+  similarity: number;
+  doctors_notes: string;
+  gender: string;
+  age: number;
+  vitals: Vitals;
+  presenting_complaint: string;
+  past_medical_history: string;
+  drug_history: string;
+  allergies: string;
+  smoking_history: string;
+  alcohol_history: string;
+  social_history: string;
 }
 
 interface CombinedCreateRequest {
@@ -168,9 +176,12 @@ export default function AudioRecorder() {
     session: undefined,
     vitals: {},
   });
-  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(
+    null
+  );
   const [isHydrated, setIsHydrated] = useState(false);
   const [isKeypointsOpen, setIsKeypointsOpen] = useState(false);
+  const [recordingConsent, setRecordingConsent] = useState(false);
   const audioChunksRef = useRef<Blob[]>([]);
   const sessionIdRef = useRef(uuidv4());
   const audioFilenameRef = useRef<string | null>(null);
@@ -225,6 +236,90 @@ export default function AudioRecorder() {
     }));
     return null;
   }
+
+  const searchParams = useSearchParams();
+
+  // Load session data from URL parameters
+  useEffect(() => {
+    const sessionParam = searchParams.get("session");
+    if (sessionParam) {
+      try {
+        const sessionData = JSON.parse(decodeURIComponent(sessionParam));
+
+        // Parse conversation into labeled segments
+        if (sessionData.conversation) {
+          const segments = sessionData.conversation
+            .split(/(?:^|\n)(doctor:|patient:)/gi)
+            .map((line: string) => line.trim())
+            .filter(Boolean);
+
+          const labeledSegments: { text: any; speaker: any }[] = [];
+          for (let i = 0; i < segments.length; i += 2) {
+            const speakerRaw = segments[i];
+            const messageRaw = segments[i + 1] || "";
+            const speaker = speakerRaw.toLowerCase().replace(":", "");
+            const text = messageRaw.trim();
+
+            if (["doctor", "patient"].includes(speaker) && text) {
+              labeledSegments.push({ text, speaker });
+            }
+          }
+
+          // Load diagnosis data from validation
+          let diagnosis = null;
+          if (sessionData.validation?.data_json) {
+            const dataJson = sessionData.validation.data_json;
+            diagnosis = {
+              diagnoses: dataJson.diagnoses || [],
+              symptoms: dataJson.symptoms || [],
+              source: "",
+              similarity: 0,
+              doctors_notes: sessionData.validation.notes_summary || "",
+              gender: dataJson.gender || "",
+              age: dataJson.age || 0,
+              vitals: {
+                blood_pressure: dataJson.vitals?.blood_pressure || "",
+                heart_rate_bpm: dataJson.vitals?.heart_rate_bpm || "",
+                respiratory_rate_bpm:
+                  dataJson.vitals?.respiratory_rate_bpm || "",
+                spo2_percent: dataJson.vitals?.spo2_percent || "",
+                pain_score: dataJson.vitals?.pain_score || 0,
+                weight_kg: dataJson.vitals?.weight_kg || 0,
+                height_cm: dataJson.vitals?.height_cm || 0,
+                temperature_celsius: dataJson.vitals?.temperature_celsius || 0,
+              },
+              presenting_complaint: dataJson.presenting_complaint || "",
+              past_medical_history: dataJson.past_medical_history || "",
+              drug_history: dataJson.drug_history || "",
+              allergies: dataJson.allergies || "",
+              smoking_history: dataJson.smoking_history || "",
+              alcohol_history: dataJson.alcohol_history || "",
+              social_history: dataJson.social_history || "",
+            };
+          }
+
+          setState((prev) => ({
+            ...prev,
+            labeledSegments,
+            summary: sessionData.summary
+              ? {
+                  patient_summary: sessionData.summary.patient || "",
+                  doctor_summary: sessionData.summary.doctor || "",
+                }
+              : null,
+            diagnosis,
+            keypoints: sessionData.validation?.data_json?.keypoints || [],
+            doctorsNotes: sessionData.validation?.notes_summary || "",
+            gender: sessionData.validation?.data_json?.gender || "",
+            age: sessionData.validation?.data_json?.age?.toString() || "",
+            vitals: sessionData.validation?.data_json?.vitals || {},
+          }));
+        }
+      } catch (error) {
+        console.error("Error parsing session data:", error);
+      }
+    }
+  }, [searchParams]);
 
   // Set hydrated state and cleanup
   useEffect(() => {
@@ -720,25 +815,69 @@ export default function AudioRecorder() {
         const lowerText = text.toLowerCase();
         let speaker: string;
 
-        if (index === 0) {
-          speaker = lowerText.startsWith("hi doctor") ? "patient" : "doctor";
+        // Patient indicators
+        const patientKeywords = [
+          "i have",
+          "i feel",
+          "i went",
+          "i had",
+          "i woke",
+          "i vomited",
+          "i didn't",
+          "i do",
+          "i've never",
+          "my stomach",
+          "last night",
+          "when i",
+          "i don't have",
+          "hi doctor",
+          "doctor i",
+          "help me",
+          "i'm feeling",
+          "i experience",
+        ];
+
+        // Doctor indicators
+        const doctorKeywords = [
+          "what",
+          "how",
+          "when",
+          "where",
+          "can you",
+          "tell me",
+          "describe",
+          "any",
+          "do you",
+          "have you",
+          "let me",
+          "i recommend",
+          "take this",
+          "you should",
+          "i suggest",
+          "based on",
+        ];
+
+        const hasPatientKeywords = patientKeywords.some((keyword) =>
+          lowerText.includes(keyword)
+        );
+
+        const hasDoctorKeywords = doctorKeywords.some((keyword) =>
+          lowerText.includes(keyword)
+        );
+
+        if (hasPatientKeywords && !hasDoctorKeywords) {
+          speaker = "patient";
+        } else if (hasDoctorKeywords && !hasPatientKeywords) {
+          speaker = "doctor";
+        } else if (
+          lowerText.includes("doctor") &&
+          !lowerText.startsWith("doctor")
+        ) {
+          // If "doctor" is mentioned but not at start, likely patient speaking
+          speaker = "patient";
         } else {
-          if (
-            lowerText.includes("?") ||
-            lowerText.includes("can you") ||
-            lowerText.includes("tell me") ||
-            lowerText.includes("prescribe") ||
-            lowerText.includes("recommend")
-          ) {
-            speaker = "doctor";
-          } else if (
-            lowerText.includes("i have") ||
-            lowerText.includes("it started")
-          ) {
-            speaker = "patient";
-          } else {
-            speaker = "doctor"; // Default to doctor for medical context
-          }
+          // Default alternating pattern starting with patient
+          speaker = index % 2 === 0 ? "patient" : "doctor";
         }
 
         return { text, speaker };
@@ -788,14 +927,25 @@ export default function AudioRecorder() {
     timestamp: number
   ) => {
     try {
+      console.log(
+        "Starting pipeline processing with transcript:",
+        transcript.substring(0, 100)
+      );
+
       // Initial segmentation
       const segments = createInitialSegments(transcript);
+      console.log("Created segments:", segments.length);
 
       // Label conversation
+      console.log("Calling labelConversation API...");
       const labeledResult = await labelConversation(token)({ data: segments });
       const labeledData = labeledResult.ok
         ? labeledResult.value?.data
         : segments;
+      console.log(
+        "Label conversation result:",
+        labeledResult.ok ? "success" : "failed"
+      );
 
       const formattedConversation = labeledData
         .filter((s) => s.text.trim().length >= 5)
@@ -804,57 +954,176 @@ export default function AudioRecorder() {
           speaker: s.speaker,
         }));
 
-      if (formattedConversation.length === 0) return;
+      console.log(
+        "Formatted conversation segments:",
+        formattedConversation.length
+      );
+      if (formattedConversation.length === 0) {
+        console.log("No valid conversation segments, skipping pipeline");
+        return;
+      }
 
       // Prepare conversation data
       const conversationData = {
         data: formattedConversation.map((s) => ({ [s.speaker]: s.text })),
       };
+      console.log("Prepared conversation data for APIs");
 
-      // Execute all API calls in parallel
-      const [suggestions, summary, diagnosis, keypoints] = await Promise.all([
-        getSuggestions(token)(conversationData).then((res) =>
-          res.ok ? res.value?.suggestions : []
-        ),
+      // Execute all API calls in parallel with individual error handling
+      console.log("Starting parallel API calls...");
+      const [suggestions, summary, diagnosis, keypoints] =
+        await Promise.allSettled([
+          getSuggestions(token)(conversationData)
+            .then((res) => {
+              console.log(
+                "Suggestions API result:",
+                res.ok ? "success" : "failed"
+              );
+              return res.ok ? res.value?.suggestions : [];
+            })
+            .catch((err) => {
+              console.error("Suggestions API error:", err);
+              return [];
+            }),
 
-        getSummary(token)(conversationData).then((res) =>
-          res.ok ? res.value : null
-        ),
+          getSummary(token)(conversationData)
+            .then((res) => {
+              console.log("Summary API result:", res.ok ? "success" : "failed");
+              return res.ok ? res.value : null;
+            })
+            .catch((err) => {
+              console.error("Summary API error:", err);
+              return null;
+            }),
 
-        getDiagnosis(token)({
-          conversation_input: conversationData,
-          doctors_notes: doctorsNotesRef.current,
-          gender: genderRef.current,
-          age: ageRef.current ? parseInt(ageRef.current) : null,
-          vitals: vitalsRef.current,
-          threshold: 0.7,
-        }).then((res) =>
-          res.ok
-            ? res.value
-            : {
-                diagnoses: [{ diagnosis: "Diagnosis pending", likelihood: 0 }],
+          getDiagnosis(token)({
+            conversation_input: conversationData,
+            doctors_notes: doctorsNotesRef.current,
+            gender: genderRef.current,
+            age: ageRef.current ? parseInt(ageRef.current) : null,
+            vitals: vitalsRef.current,
+            threshold: 0.7,
+          })
+            .then((res) => {
+              console.log(
+                "Diagnosis API result:",
+                res.ok ? "success" : "failed"
+              );
+              return res.ok
+                ? res.value
+                : {
+                    diagnoses: [
+                      { diagnosis: "Diagnosis pending", likelihood: 0 },
+                    ],
+                    symptoms: [],
+                    source: "",
+                    similarity: 0,
+                    doctors_notes: "",
+                    gender: "",
+                    age: 0,
+                    vitals: {
+                      blood_pressure: "",
+                      heart_rate_bpm: "",
+                      respiratory_rate_bpm: "",
+                      spo2_percent: "",
+                      pain_score: 0,
+                      weight_kg: 0,
+                      height_cm: 0,
+                      temperature_celsius: 0,
+                    },
+                    presenting_complaint: "",
+                    past_medical_history: "",
+                    drug_history: "",
+                    allergies: "",
+                    smoking_history: "",
+                    alcohol_history: "",
+                    social_history: "",
+                  };
+            })
+            .catch((err) => {
+              console.error("Diagnosis API error:", err);
+              return {
+                diagnoses: [{ diagnosis: "Diagnosis failed", likelihood: 0 }],
                 symptoms: [],
-              }
-        ),
+                source: "",
+                similarity: 0,
+                doctors_notes: "",
+                gender: "",
+                age: 0,
+                vitals: {
+                  blood_pressure: "",
+                  heart_rate_bpm: "",
+                  respiratory_rate_bpm: "",
+                  spo2_percent: "",
+                  pain_score: 0,
+                  weight_kg: 0,
+                  height_cm: 0,
+                  temperature_celsius: 0,
+                },
+                presenting_complaint: "",
+                past_medical_history: "",
+                drug_history: "",
+                allergies: "",
+                smoking_history: "",
+                alcohol_history: "",
+                social_history: "",
+              };
+            }),
 
-        getKeypoints(token)({
-          conversation_input: conversationData,
-          doctors_notes: doctorsNotesRef.current,
-        }).then((res) => (res.ok ? res.value?.keypoints : [])),
-      ]);
+          getKeypoints(token)({
+            conversation_input: conversationData,
+            doctors_notes: doctorsNotesRef.current,
+          })
+            .then((res) => {
+              console.log(
+                "Keypoints API result:",
+                res.ok ? "success" : "failed"
+              );
+              return res.ok ? res.value?.keypoints : [];
+            })
+            .catch((err) => {
+              console.error("Keypoints API error:", err);
+              return [];
+            }),
+        ]);
+
+      // Extract results from Promise.allSettled
+      const suggestionsResult =
+        suggestions.status === "fulfilled" ? suggestions.value : [];
+      const summaryResult =
+        summary.status === "fulfilled" ? summary.value : null;
+      const diagnosisResult =
+        diagnosis.status === "fulfilled" ? diagnosis.value : null;
+      const keypointsResult =
+        keypoints.status === "fulfilled" ? keypoints.value : [];
+
+      console.log("All API calls completed. Results:", {
+        suggestions: suggestionsResult?.length || 0,
+        summary: summaryResult ? "present" : "null",
+        diagnosis: diagnosisResult?.diagnoses?.length || 0,
+        keypoints: keypointsResult?.length || 0,
+      });
 
       // Update state with all results - replace conversation instead of appending
       setState((prev) => ({
         ...prev,
         labeledSegments: formattedConversation, // Replace instead of append
-        suggestions: suggestions || prev.suggestions,
-        summary: summary || prev.summary,
-        diagnosis: diagnosis || prev.diagnosis,
-        keypoints: keypoints || prev.keypoints,
+        suggestions: suggestionsResult || prev.suggestions,
+        summary: summaryResult || prev.summary,
+        diagnosis: diagnosisResult || prev.diagnosis,
+        keypoints: keypointsResult || prev.keypoints,
         isSending: false,
       }));
+
+      console.log("Pipeline processing completed successfully");
     } catch (error) {
       console.error("Pipeline error:", error);
+      setState((prev) => ({
+        ...prev,
+        error:
+          error instanceof Error ? error.message : "Pipeline processing failed",
+        isSending: false,
+      }));
       throw error;
     }
   };
@@ -1068,66 +1337,56 @@ export default function AudioRecorder() {
       mediaRecorder.pause();
       setState((s) => ({ ...s, isPaused: true }));
 
-      // Check if we're currently sending audio
-      if (isSendingLockRef.current) {
-        console.log(
-          "Transcription in progress, waiting for it to complete before processing pause"
-        );
-        // Wait for current transcription to finish (up to 3 seconds)
-        for (let i = 0; i < 30; i++) {
-          if (!isSendingLockRef.current) break;
+      // Wait for current processing to finish, then send final audio
+      setTimeout(async () => {
+        // Wait for current transcription to finish
+        while (isSendingLockRef.current) {
           await new Promise((r) => setTimeout(r, 100));
         }
-      }
 
-      // When pausing, we should process what we have so far
-      if (audioChunksRef.current.length > 0 && !isSendingLockRef.current) {
-        const mimeType = mediaRecorder.mimeType || getSupportedMimeType();
-        const completeAudio = new Blob(audioChunksRef.current, {
-          type: mimeType,
-        });
-        const ts = Date.now();
-
-        console.log(
-          `Sending paused audio (${completeAudio.size} bytes) to transcription`
-        );
-
-        isSendingLockRef.current = true;
-        setState((s) => ({ ...s, isSending: true }));
-
-        try {
-          const form = new FormData();
-          const ext = mimeType.includes("webm") ? "webm" : "wav";
-          form.append(
-            "audio",
-            completeAudio,
-            `pause-${sessionIdRef.current}-${ts}.${ext}`
-          );
-
-          const response = await fetch("/api/deepgram/transcribe", {
-            method: "POST",
-            body: form,
-            headers: token ? { Authorization: `Bearer ${token}` } : {},
+        // Process accumulated audio
+        if (audioChunksRef.current.length > 0) {
+          const mimeType = mediaRecorder.mimeType || getSupportedMimeType();
+          const completeAudio = new Blob(audioChunksRef.current, {
+            type: mimeType,
           });
+          const ts = Date.now();
 
-          if (response.ok) {
-            const data = await response.json();
-            const text = data.text || "";
-            if (text.trim()) {
-              await processThroughPipeline(text, ts);
+          console.log(`Sending paused audio (${completeAudio.size} bytes)`);
+
+          isSendingLockRef.current = true;
+          setState((s) => ({ ...s, isSending: true }));
+
+          try {
+            const form = new FormData();
+            const ext = mimeType.includes("webm") ? "webm" : "wav";
+            form.append(
+              "audio",
+              completeAudio,
+              `pause-${sessionIdRef.current}-${ts}.${ext}`
+            );
+
+            const response = await fetch("/api/deepgram/transcribe", {
+              method: "POST",
+              body: form,
+              headers: token ? { Authorization: `Bearer ${token}` } : {},
+            });
+
+            if (response.ok) {
+              const data = await response.json();
+              const text = data.text || "";
+              if (text.trim()) {
+                await processThroughPipeline(text, ts);
+              }
             }
+          } catch (err) {
+            console.error("Pause transcription error:", err);
+          } finally {
+            isSendingLockRef.current = false;
+            setState((s) => ({ ...s, isSending: false }));
           }
-        } catch (err) {
-          console.error("Pause transcription error:", err);
-          setState((s) => ({
-            ...s,
-            error: err instanceof Error ? err.message : "Transcription error",
-          }));
-        } finally {
-          isSendingLockRef.current = false;
-          setState((s) => ({ ...s, isSending: false }));
         }
-      }
+      }, 100);
     } else {
       console.log("Resuming recording");
       try {
@@ -1135,7 +1394,6 @@ export default function AudioRecorder() {
         setState((s) => ({ ...s, isPaused: false }));
       } catch (err) {
         console.error("Error resuming recording:", err);
-        // If resume fails, reset the recorder
         if (mediaRecorder.state !== "inactive") {
           try {
             mediaRecorder.stop();
@@ -1146,10 +1404,8 @@ export default function AudioRecorder() {
             );
           }
         }
-        // Start a new recording session
         startRecording();
       }
-      // Don't reset audio chunks when resuming - we want to keep the accumulated audio
     }
   }, [mediaRecorder, token, processThroughPipeline, startRecording]);
 
@@ -1340,7 +1596,6 @@ export default function AudioRecorder() {
             throw new Error(createResult.error || "Failed to create record");
           }
 
-          clearResults();
           return;
         } catch (err) {
           console.error("Error creating minimal record:", err);
@@ -1515,12 +1770,19 @@ export default function AudioRecorder() {
         diagnosis: {
           diagnoses: result.diagnoses || [],
           symptoms: result.symptoms || [],
-          source: result.source,
-          similarity: result.similarity,
-          doctors_notes: result.doctors_notes,
-          gender: result.gender,
-          age: result.age,
+          source: result.source || "",
+          similarity: result.similarity || 0,
+          doctors_notes: result.doctors_notes || "",
+          gender: result.gender || "",
+          age: result.age || 0,
           vitals: result.vitals || {},
+          presenting_complaint: result.presenting_complaint || "",
+          past_medical_history: result.past_medical_history || "",
+          drug_history: result.drug_history || "",
+          allergies: result.allergies || "",
+          smoking_history: result.smoking_history || "",
+          alcohol_history: result.alcohol_history || "",
+          social_history: result.social_history || "",
         },
         keypoints: result.keypoints || [],
         error: null,
@@ -1540,13 +1802,10 @@ export default function AudioRecorder() {
 
   const handleToggleRecording = useCallback(async () => {
     if (!isHydrated) {
-      console.warn(
-        "Toggle recording skipped: not hydrated",
-        new Date().toISOString()
-      );
+      console.warn("Toggle recording skipped: not hydrated");
       return;
     }
-    if (state.isRecording && !state.isPaused) {
+    if (state.isRecording) {
       // Immediately update UI to show recording has stopped
       if (mediaRecorder && mediaRecorder.state === "recording") {
         mediaRecorder.stop();
@@ -1554,53 +1813,54 @@ export default function AudioRecorder() {
       setMediaRecorder(null);
       setState((s) => ({ ...s, isRecording: false }));
 
-      // Process audio in the background
-      console.log("Processing audio in background after stopping recording");
+      // Process final audio after current processing finishes
+      setTimeout(async () => {
+        // Wait for current processing to finish
+        while (isSendingLockRef.current) {
+          await new Promise((r) => setTimeout(r, 100));
+        }
 
-      // Run the rest of the stop recording logic in the background
-      setTimeout(() => {
-        // Process final audio if needed
-        if (audioChunksRef.current.length > 0 && !isSendingLockRef.current) {
+        // Process final accumulated audio
+        if (audioChunksRef.current.length > 0) {
           const mimeType = getSupportedMimeType();
           const completeAudio = new Blob(audioChunksRef.current, {
             type: mimeType,
           });
           const ts = Date.now();
 
+          console.log(`Sending final audio (${completeAudio.size} bytes)`);
+
           isSendingLockRef.current = true;
           setState((s) => ({ ...s, isSending: true }));
 
-          const form = new FormData();
-          const ext = mimeType.includes("webm") ? "webm" : "wav";
-          form.append(
-            "audio",
-            completeAudio,
-            `final-${sessionIdRef.current}-${ts}.${ext}`
-          );
+          try {
+            const form = new FormData();
+            const ext = mimeType.includes("webm") ? "webm" : "wav";
+            form.append(
+              "audio",
+              completeAudio,
+              `final-${sessionIdRef.current}-${ts}.${ext}`
+            );
 
-          fetch("/api/deepgram/transcribe", {
-            method: "POST",
-            body: form,
-            headers: token ? { Authorization: `Bearer ${token}` } : {},
-          })
-            .then((response) => {
-              if (!response.ok)
-                throw new Error(`Transcription failed: ${response.status}`);
-              return response.json();
-            })
-            .then((data) => {
+            const response = await fetch("/api/deepgram/transcribe", {
+              method: "POST",
+              body: form,
+              headers: token ? { Authorization: `Bearer ${token}` } : {},
+            });
+
+            if (response.ok) {
+              const data = await response.json();
               const text = data.text || "";
               if (text.trim()) {
-                return processThroughPipeline(text, ts);
+                await processThroughPipeline(text, ts);
               }
-            })
-            .catch((err) => {
-              console.error("Final transcription error:", err);
-            })
-            .finally(() => {
-              isSendingLockRef.current = false;
-              setState((s) => ({ ...s, isSending: false, isStopping: false }));
-            });
+            }
+          } catch (err) {
+            console.error("Final transcription error:", err);
+          } finally {
+            isSendingLockRef.current = false;
+            setState((s) => ({ ...s, isSending: false, isStopping: false }));
+          }
         } else {
           setState((s) => ({ ...s, isStopping: false }));
         }
@@ -1611,7 +1871,6 @@ export default function AudioRecorder() {
   }, [
     isHydrated,
     state.isRecording,
-    state.isPaused,
     startRecording,
     mediaRecorder,
     token,
@@ -1672,69 +1931,135 @@ export default function AudioRecorder() {
               />
             </div>
             <VitalsForm vitals={state.vitals} onChange={handleVitalsChange} />
-            <div className="flex w-full justify-center gap-4 mt-4">
-              {/* Start/Resume Recording Button */}
-              {(!state.isRecording || state.isPaused) && (
+            {/* Recording Consent */}
+            {!state.isRecording && (
+              <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-md">
+                <div className="flex items-start space-x-3">
+                  <input
+                    type="checkbox"
+                    id="recordingConsent"
+                    checked={recordingConsent}
+                    onChange={(e) => setRecordingConsent(e.target.checked)}
+                    className="mt-1"
+                  />
+                  <label
+                    htmlFor="recordingConsent"
+                    className="text-sm text-gray-700"
+                  >
+                    <strong>Recording Consent:</strong> I confirm that I have
+                    obtained informed consent from the patient for recording
+                    this consultation. The patient has been informed that the
+                    conversation will be recorded and transcribed for medical
+                    documentation and diagnostic support purposes.
+                  </label>
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-col w-full items-center gap-3 mt-4">
+              {/* Start Button - Show when not recording */}
+              {!state.isRecording && (
                 <Button
-                  onClick={
-                    state.isPaused ? pauseRecording : handleToggleRecording
-                  }
-                  className="bg-[#34E796] hover:bg-[#00c36b] w-[32%]"
-                  disabled={false}
+                  onClick={handleToggleRecording}
+                  className="bg-[#34E796] hover:bg-[#00c36b] w-[60%]"
+                  disabled={state.isSending || !recordingConsent}
                 >
-                  {state.isPaused ? "Resume Recording" : "Start Recording"}
+                  Start
                 </Button>
               )}
 
-              {/* Stop Recording Button - Show when recording or paused */}
+              {/* Pause/Resume Button - Show when recording */}
+              {state.isRecording && (
+                <Button
+                  onClick={pauseRecording}
+                  className="bg-[#facc15] hover:bg-[#eab308] w-[60%]"
+                  disabled={false}
+                >
+                  {state.isPaused ? "Resume" : "Pause"}
+                </Button>
+              )}
+
+              {/* End Consultation Button - Show when recording or paused */}
               {state.isRecording && (
                 <Button
                   onClick={handleToggleRecording}
-                  className="bg-[#f27252] hover:bg-[#ea5321] w-[32%]"
+                  className="bg-[#f27252] hover:bg-[#ea5321] w-[60%]"
                   disabled={false}
                 >
-                  Stop Recording
+                  End Consultation
                 </Button>
               )}
 
-              {/* Pause Recording Button - Only show when actively recording */}
-              {state.isRecording && !state.isPaused && (
-                <Button
-                  onClick={pauseRecording}
-                  className="bg-[#facc15] hover:bg-[#eab308] w-[32%]"
-                  disabled={false}
-                >
-                  Pause Recording
-                </Button>
-              )}
-
-              {/* Clear Results Button - Show when not recording */}
-              {!state.isRecording && (
-                <Button
-                  onClick={clearResults}
-                  className="bg-[#f27252] hover:bg-[#ea5321] w-[32%]"
-                  disabled={
-                    state.isSending ||
-                    (state.labeledSegments.length === 0 &&
-                      state.diagnosis === null &&
-                      state.keypoints.length === 0)
-                  }
-                >
-                  Clear Results
-                </Button>
-              )}
+              {/* Clear Results Button - Show when not recording and has results */}
+              {!state.isRecording &&
+                (state.labeledSegments.length > 0 ||
+                  state.diagnosis !== null ||
+                  state.keypoints.length > 0) && (
+                  <Button
+                    onClick={() => {
+                      clearResults();
+                      setRecordingConsent(false);
+                    }}
+                    className="bg-[#f27252] hover:bg-[#ea5321] w-[60%]"
+                    disabled={state.isSending}
+                  >
+                    Clear Results
+                  </Button>
+                )}
             </div>
 
             {/* Send for Diagnosis Button */}
             <div className="flex w-full justify-center mt-4">
               <Button
                 onClick={handleSendForDiagnosis}
-                className="bg-[#60a5fa] hover:bg-[#3b82f6] w-[66%]"
+                className="bg-[#60a5fa] hover:bg-[#3b82f6] w-[60%]"
                 disabled={state.isSending}
               >
                 Send for Diagnosis
               </Button>
             </div>
+
+            {/* Diagnosis Chart - Right after buttons */}
+            {state.diagnosis && (
+              <div className="mt-6">
+                <div className="bg-white p-4 rounded-md shadow-sm">
+                  <div className="h-32 sm:h-40">
+                    <Bar data={getChartData()} options={chartOptions} />
+                  </div>
+
+                  {/* Diagnoses and Symptoms right below chart */}
+                  <div className="mt-4 pt-4 border-t">
+                    <p className="mb-2">
+                      <strong>Diagnoses:</strong>
+                    </p>
+                    <ul className="list-disc pl-5 mb-4">
+                      {state.diagnosis.diagnoses.map((diag, index) => (
+                        <li key={index}>
+                          {formatText(diag.diagnosis)} (Likelihood:{" "}
+                          {diag.likelihood}%)
+                        </li>
+                      ))}
+                    </ul>
+
+                    {state.diagnosis.symptoms &&
+                      state.diagnosis.symptoms.length > 0 && (
+                        <>
+                          <p className="mb-2">
+                            <strong>Symptoms:</strong>
+                          </p>
+                          <ul className="list-disc pl-5">
+                            {state.diagnosis.symptoms.map((symptom, index) => (
+                              <li key={`symptom-${index}`}>
+                                {formatText(symptom)}
+                              </li>
+                            ))}
+                          </ul>
+                        </>
+                      )}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {state.keypoints.length > 0 && (
               <div className="mt-4">
@@ -1755,44 +2080,80 @@ export default function AudioRecorder() {
 
             {state.diagnosis && (
               <div className="mt-8">
-                <h3 className="font-bold mb-2 text-lg sm:text-xl">
-                  Diagnosis{" "}
-                  {state.diagnosis.similarity
-                    ? `(Similarity: ${state.diagnosis.similarity.toFixed(2)})`
-                    : ""}
-                </h3>
-                <div className="bg-white p-4 rounded-md shadow-sm">
-                  <p className="mb-2">
-                    <strong>Diagnoses:</strong>
-                  </p>
-                  <ul className="list-disc pl-5 mb-2">
-                    {state.diagnosis.diagnoses.map((diag, index) => (
-                      <li key={index}>
-                        {formatText(diag.diagnosis)} (Likelihood:{" "}
-                        {diag.likelihood}
-                        %)
-                      </li>
-                    ))}
-                  </ul>
-
-                  {state.diagnosis.symptoms &&
-                    state.diagnosis.symptoms.length > 0 && (
-                      <>
-                        <p className="mb-2 mt-4">
-                          <strong>Symptoms:</strong>
+                {/* Medical History Section */}
+                <div className="mt-6 bg-white p-4 rounded-md shadow-sm">
+                  <h4 className="font-semibold mb-3 text-lg">
+                    Medical History
+                  </h4>
+                  <div className="space-y-3">
+                    {state.diagnosis.presenting_complaint && (
+                      <div>
+                        <p className="font-medium text-sm">
+                          1. Presenting Complaint:
                         </p>
-                        <ul className="list-disc pl-5 mb-2">
-                          {state.diagnosis.symptoms.map((symptom, index) => (
-                            <li key={`symptom-${index}`}>
-                              {formatText(symptom)}
-                            </li>
-                          ))}
-                        </ul>
-                      </>
+                        <p className="text-sm text-gray-700 ml-4">
+                          {state.diagnosis.presenting_complaint}
+                        </p>
+                      </div>
                     )}
-
-                  <div className="h-32 sm:h-40 mt-4">
-                    <Bar data={getChartData()} options={chartOptions} />
+                    {state.diagnosis.past_medical_history && (
+                      <div>
+                        <p className="font-medium text-sm">
+                          2. Past Medical History:
+                        </p>
+                        <p className="text-sm text-gray-700 ml-4">
+                          {state.diagnosis.past_medical_history}
+                        </p>
+                      </div>
+                    )}
+                    {state.diagnosis.drug_history && (
+                      <div>
+                        <p className="font-medium text-sm">
+                          3. Drug/Medication History:
+                        </p>
+                        <p className="text-sm text-gray-700 ml-4">
+                          {state.diagnosis.drug_history}
+                        </p>
+                      </div>
+                    )}
+                    {state.diagnosis.allergies && (
+                      <div>
+                        <p className="font-medium text-sm">4. Allergies:</p>
+                        <p className="text-sm text-gray-700 ml-4">
+                          {state.diagnosis.allergies}
+                        </p>
+                      </div>
+                    )}
+                    {state.diagnosis.smoking_history && (
+                      <div>
+                        <p className="font-medium text-sm">
+                          5. Smoking History:
+                        </p>
+                        <p className="text-sm text-gray-700 ml-4">
+                          {state.diagnosis.smoking_history}
+                        </p>
+                      </div>
+                    )}
+                    {state.diagnosis.alcohol_history && (
+                      <div>
+                        <p className="font-medium text-sm">
+                          6. Alcohol History:
+                        </p>
+                        <p className="text-sm text-gray-700 ml-4">
+                          {state.diagnosis.alcohol_history}
+                        </p>
+                      </div>
+                    )}
+                    {state.diagnosis.social_history && (
+                      <div>
+                        <p className="font-medium text-sm">
+                          7. Social History:
+                        </p>
+                        <p className="text-sm text-gray-700 ml-4">
+                          {state.diagnosis.social_history}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1922,6 +2283,18 @@ export default function AudioRecorder() {
                       />
                     </div>
                   )}
+                  <div className="mb-4">
+                    <p className="mb-2">
+                      <strong>Other Diagnoses:</strong>
+                    </p>
+                    <Textarea
+                      className="w-full p-2 border rounded"
+                      placeholder="Add your diagnosis here..."
+                      value={state.doctorsNotes}
+                      onChange={handleDoctorsNotesChange}
+                      rows={3}
+                    />
+                  </div>
                   <div className="flex justify-end space-x-4">
                     <Button
                       onClick={handleAccept}

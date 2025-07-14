@@ -20,21 +20,28 @@ interface DiagnoseRequest {
 interface DiagnoseResponse {
   diagnoses: Array<{ diagnosis: string; likelihood: number }>;
   symptoms: string[];
-  source?: string;
-  similarity?: number;
-  doctors_notes?: string;
-  gender?: string;
-  age?: string | number;
-  vitals?: {
-    blood_pressure?: string;
-    heart_rate_bpm?: string;
-    respiratory_rate_bpm?: string | null;
-    spo2_percent?: string | null;
-    pain_score?: number;
-    weight_kg?: number;
-    height_cm?: number;
-    temperature_celsius?: number | null;
+  source: string;
+  similarity: number;
+  doctors_notes: string;
+  gender: string;
+  age: number;
+  vitals: {
+    blood_pressure: string;
+    heart_rate_bpm: string;
+    respiratory_rate_bpm: string;
+    spo2_percent: string;
+    pain_score: number;
+    weight_kg: number;
+    height_cm: number;
+    temperature_celsius: number;
   };
+  presenting_complaint: string;
+  past_medical_history: string;
+  drug_history: string;
+  allergies: string;
+  smoking_history: string;
+  alcohol_history: string;
+  social_history: string;
 }
 
 export async function POST(request: NextRequest) {
