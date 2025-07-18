@@ -20,6 +20,7 @@ import { saveAuthData } from "@/lib/auth";
 import { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { Loader } from "@/components/ui/loader";
+import MaintenanceBanner from "@/components/MaintenanceBanner";
 
 const formSchema = z.object({
   email: z.string().email({ message: "Invalid email address" }),
@@ -67,8 +68,12 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-around bg-gradient-to-r from-[#E3ECFF] via-[#C3D4FF] to-[#E3ECFF] animate-gradient-x">
-      <div className="text-center flex flex-col gap-4 justify-center">
+    <div className="flex min-h-screen flex-col bg-gradient-to-r from-[#E3ECFF] via-[#C3D4FF] to-[#E3ECFF] animate-gradient-x">
+      <div className="p-4">
+        <MaintenanceBanner />
+      </div>
+      <div className="flex flex-1 items-center justify-around">
+        <div className="text-center flex flex-col gap-4 justify-center">
         <p className="text-2xl font-bold drop-shadow-md">Surge AI</p>
         <p className="text-md drop-shadow-sm">
           Copilot for doctors to smooth out the kinks in life
@@ -172,6 +177,7 @@ export default function LoginPage() {
           </Form>
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }

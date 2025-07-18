@@ -28,9 +28,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get audio from form data
+    // Get audio and language from form data
     const formData = await request.formData();
     const audioBlob = formData.get("audio") as Blob;
+    const language = (formData.get("language") as string) || "en";
+    
     if (!audioBlob) {
       console.error("No audio file provided in form data");
       return NextResponse.json(
@@ -72,16 +74,25 @@ export async function POST(request: NextRequest) {
     // Initialize Deepgram client
     const deepgram = createClient(deepgramApiKey);
 
-    // Transcribe audio
+    // Transcribe audio with language support
+    const transcribeOptions: any = {
+      model: "nova-3",
+      smart_format: true,
+      punctuate: true,
+      utterances: true,
+      mimetype: mimeType,
+    };
+
+    // Add language parameter for non-English languages
+    if (language !== "en") {
+      transcribeOptions.language = language;
+    }
+
+    console.log("Transcribing with options:", transcribeOptions);
+    
     const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
       audioBuffer,
-      {
-        model: "nova-3",
-        smart_format: true,
-        punctuate: true,
-        utterances: true,
-        mimetype: mimeType,
-      }
+      transcribeOptions
     );
 
 

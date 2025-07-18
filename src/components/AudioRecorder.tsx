@@ -36,6 +36,7 @@ import {
 import { Card, CardTitle } from "./ui/card";
 import { Menu } from "lucide-react";
 import { Loader } from "./ui/loader";
+import MaintenanceBanner from "./MaintenanceBanner";
 
 // Register Chart.js components
 ChartJS.register(BarElement, CategoryScale, LinearScale, Tooltip);
@@ -154,6 +155,7 @@ type RecorderState = {
   doctorsNotes: string;
   gender: string;
   age: string;
+  language: string;
   session?: CombinedCreateResponse;
   vitals: Vitals;
 };
@@ -173,6 +175,7 @@ export default function AudioRecorder() {
     doctorsNotes: "",
     gender: "",
     age: "",
+    language: "en",
     session: undefined,
     vitals: {},
   });
@@ -370,6 +373,10 @@ export default function AudioRecorder() {
     setState((prev) => ({ ...prev, age: e.target.value }));
   };
 
+  const handleLanguageChange = (value: string) => {
+    setState((prev) => ({ ...prev, language: value }));
+  };
+
   const handleVitalsChange = (
     e: React.ChangeEvent<HTMLInputElement>,
     field: keyof NonNullable<RecorderState["vitals"]>
@@ -552,6 +559,7 @@ export default function AudioRecorder() {
           audioBlob,
           `chunk-${sessionIdRef.current}-${startTime}.${ext}`
         );
+        formData.append("language", state.language);
 
         // Add metadata to help with debugging
         formData.append(
@@ -894,6 +902,7 @@ export default function AudioRecorder() {
       blob,
       `chunk-${sessionIdRef.current}-${ts}.${ext}`
     );
+    formData.append("language", state.language);
 
     // Add timeout to prevent hanging requests
     const controller = new AbortController();
@@ -1174,6 +1183,7 @@ export default function AudioRecorder() {
         const ext = mimeType.includes("webm") ? "webm" : "wav";
         const filename = `chunk-${sessionIdRef.current}-${ts}.${ext}`;
         form.append("audio", blob, filename);
+        form.append("language", state.language);
         console.log(`Sending file: ${filename} (${blobSize} bytes)`);
 
         // Add timeout to prevent hanging requests
@@ -1273,6 +1283,7 @@ export default function AudioRecorder() {
           completeAudio,
           `complete-${sessionIdRef.current}-${ts}.${ext}`
         );
+        form.append("language", state.language);
 
         fetch("/api/deepgram/transcribe", {
           method: "POST",
@@ -1365,6 +1376,7 @@ export default function AudioRecorder() {
               completeAudio,
               `pause-${sessionIdRef.current}-${ts}.${ext}`
             );
+            form.append("language", state.language);
 
             const response = await fetch("/api/deepgram/transcribe", {
               method: "POST",
@@ -1446,6 +1458,7 @@ export default function AudioRecorder() {
             completeAudio,
             `final-${sessionIdRef.current}-${ts}.${ext}`
           );
+          form.append("language", state.language);
 
           const response = await fetch("/api/deepgram/transcribe", {
             method: "POST",
@@ -1841,6 +1854,7 @@ export default function AudioRecorder() {
               completeAudio,
               `final-${sessionIdRef.current}-${ts}.${ext}`
             );
+            form.append("language", state.language);
 
             const response = await fetch("/api/deepgram/transcribe", {
               method: "POST",
@@ -1887,6 +1901,7 @@ export default function AudioRecorder() {
 
   return (
     <div className="p-4 sm:p-8 bg-gray-50 min-h-screen">
+      <MaintenanceBanner />
       <p className="font-bold text-xl">Home</p>
       <div className="mt-8 flex gap-4">
         <Card className="w-full sm:w-8/12 p-8 ">
@@ -1911,7 +1926,7 @@ export default function AudioRecorder() {
                 className="w-full p-4 border rounded-md bg-white"
               />
             </div>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
               <Select onValueChange={handleGenderChange} value={state.gender}>
                 <SelectTrigger className="w-full bg-white">
                   <SelectValue placeholder="Select Gender" />
@@ -1929,6 +1944,15 @@ export default function AudioRecorder() {
                 placeholder="Age"
                 className="w-full bg-white"
               />
+              <Select onValueChange={handleLanguageChange} value={state.language}>
+                <SelectTrigger className="w-full bg-white">
+                  <SelectValue placeholder="Select Language" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="en">English</SelectItem>
+                  <SelectItem value="zh-CN">Mandarin (Simplified)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <VitalsForm vitals={state.vitals} onChange={handleVitalsChange} />
             {/* Recording Consent */}
