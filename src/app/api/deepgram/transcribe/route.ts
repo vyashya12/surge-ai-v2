@@ -7,7 +7,6 @@ interface TranscribeResponse {
 
 export async function POST(request: NextRequest) {
   try {
-
     // Validate Deepgram API key
     const deepgramApiKey = process.env.DEEPGRAM_API_KEY;
     if (!deepgramApiKey) {
@@ -32,7 +31,7 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const audioBlob = formData.get("audio") as Blob;
     const language = (formData.get("language") as string) || "en";
-    
+
     if (!audioBlob) {
       console.error("No audio file provided in form data");
       return NextResponse.json(
@@ -76,7 +75,7 @@ export async function POST(request: NextRequest) {
 
     // Transcribe audio with language support
     const transcribeOptions: any = {
-      model: "nova-3",
+      model: "nova-2",
       smart_format: true,
       punctuate: true,
       utterances: true,
@@ -89,13 +88,11 @@ export async function POST(request: NextRequest) {
     }
 
     console.log("Transcribing with options:", transcribeOptions);
-    
+
     const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
       audioBuffer,
       transcribeOptions
     );
-
-
 
     if (error) {
       console.error("Deepgram transcription error:", error.message);
