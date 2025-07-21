@@ -11,7 +11,7 @@ export async function GET(
     const { doctorId } = params;
 
     const response = await axios.get(
-      `http://13.215.163.56/session-history/${doctorId}`,
+      `${process.env.NEXT_PUBLIC_BACKEND_API_URL}/session-history/${doctorId}`,
       {
         headers: {
           ...(token ? { Authorization: token } : {}),

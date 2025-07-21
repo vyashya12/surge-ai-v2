@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
 
     // Use hardcoded URL if environment variable is not set
     const backendUrl =
-      process.env.NEXT_PUBLIC_BACKEND_API_URL || "http://13.215.163.56";
+      process.env.NEXT_PUBLIC_BACKEND_API_URL || "http://43.216.251.100";
     logger.info("Backend URL", { backendUrl });
 
     const authHeader = request.headers.get("Authorization");

@@ -6,7 +6,7 @@ export async function GET(req: NextRequest) {
     const token = req.headers.get("Authorization");
 
     const response = await axios.get(
-      "http://13.215.163.56/diagnosis-validation-v2/unvalidated",
+      `${process.env.NEXT_PUBLIC_BACKEND_API_URL}/diagnosis-validation-v2/unvalidated`,
       {
         headers: {
           ...(token ? { Authorization: token } : {}),
