@@ -1901,7 +1901,7 @@ export default function AudioRecorder() {
 
   return (
     <div className="p-4 sm:p-8 bg-gray-50 min-h-screen">
-      <MaintenanceBanner />
+      {/* <MaintenanceBanner /> */}
       <p className="font-bold text-xl">Home</p>
       <div className="mt-8 flex gap-4">
         <Card className="w-full sm:w-8/12 p-8 ">
@@ -1951,6 +1951,8 @@ export default function AudioRecorder() {
                 <SelectContent>
                   <SelectItem value="en">English</SelectItem>
                   <SelectItem value="zh-CN">Mandarin (Simplified)</SelectItem>
+                  <SelectItem value="zh-HK">Cantonese (Traditional)</SelectItem>
+                  <SelectItem value="ms">Malay</SelectItem>
                 </SelectContent>
               </Select>
             </div>

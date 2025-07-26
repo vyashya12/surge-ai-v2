@@ -69,9 +69,9 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-gradient-to-r from-[#E3ECFF] via-[#C3D4FF] to-[#E3ECFF] animate-gradient-x">
-      <div className="p-4">
+      {/* <div className="p-4">
         <MaintenanceBanner />
-      </div>
+      </div> */}
       <div className="flex flex-1 items-center justify-around">
         <div className="text-center flex flex-col gap-4 justify-center">
         <p className="text-2xl font-bold drop-shadow-md">Surge AI</p>
